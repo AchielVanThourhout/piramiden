@@ -10,13 +10,13 @@ let state = {
   lobby: { host: "", players: [], votes: 0, required: 0, youVoted: false },
   game: null,
   memoryGuesses: ["", "", "", ""],
-  now: Date.now()
+  now: Date.now(),
 };
 
 let ui = {
   sheetOpen: false,
   sheetTitle: "",
-  sheetHtml: ""
+  sheetHtml: "",
 };
 
 const app = document.querySelector("#app");
@@ -25,6 +25,7 @@ function myName() {
   return (state.name ?? "").trim();
 }
 
+/* ---------- Overlay Sheet ---------- */
 function openSheet(title, html) {
   ui.sheetOpen = true;
   ui.sheetTitle = title ?? "";
@@ -36,10 +37,29 @@ function closeSheet() {
   render();
 }
 
+/* ---------- Timers (no full re-render) ---------- */
 setInterval(() => {
   state.now = Date.now();
-  updateLiveTimers(); // géén full render meer
+  updateLiveTimers();
 }, 250);
+
+function updateLiveTimers() {
+  const g = state.game;
+  if (!g) return;
+
+  const chip = document.querySelector("#timerChip");
+  if (!chip) return;
+
+  if (g.phase === "review") {
+    const endsAt = g.review?.endsAt ?? 0;
+    const secs = Math.max(0, Math.ceil((endsAt - state.now) / 1000));
+    chip.textContent = `Start ${secs}s`;
+  } else if (g.phase === "claim") {
+    const endsAt = g.round?.passEndsAt ?? 0;
+    const secs = Math.max(0, Math.ceil((endsAt - state.now) / 1000));
+    chip.textContent = `Auto ${secs}s`;
+  }
+}
 
 /* ---------- Shell ---------- */
 function shell(title, rightHtml, mainHtml, bottomHtml = "") {
@@ -79,36 +99,22 @@ function shell(title, rightHtml, mainHtml, bottomHtml = "") {
   `;
 
   const ov = document.querySelector("#overlay");
-  if (ov) ov.onclick = (e) => { if (e.target && e.target.id === "overlay") closeSheet(); };
+  if (ov) {
+    ov.onclick = (e) => {
+      if (e.target && e.target.id === "overlay") closeSheet();
+    };
+  }
 
   const cs = document.querySelector("#closeSheet");
   if (cs) cs.onclick = () => closeSheet();
 }
 
-/* ---------- Render ---------- */
+/* ---------- Render Router ---------- */
 function render() {
   if (state.screen === "home") return renderHome();
   if (state.screen === "lobby") return renderLobby();
   if (state.screen === "memory") return renderMemory();
   return renderGame();
-}
-
-function updateLiveTimers() {
-  const g = state.game;
-  if (!g) return;
-
-  const chip = document.querySelector("#timerChip");
-  if (!chip) return;
-
-  if (g.phase === "review") {
-    const endsAt = g.review?.endsAt ?? 0;
-    const secs = Math.max(0, Math.ceil((endsAt - state.now) / 1000));
-    chip.textContent = `Start ${secs}s`;
-  } else if (g.phase === "claim") {
-    const endsAt = g.round?.passEndsAt ?? 0;
-    const secs = Math.max(0, Math.ceil((endsAt - state.now) / 1000));
-    chip.textContent = `Auto ${secs}s`;
-  }
 }
 
 /* ---------- HOME ---------- */
@@ -135,44 +141,61 @@ function renderHome() {
     `
   );
 
-  document.querySelector("#name").oninput = (e) => { state.name = e.target.value; };
+  const nameInp = document.querySelector("#name");
+  if (nameInp) nameInp.oninput = (e) => (state.name = e.target.value);
 
-  // ✅ STRUCTURELE FIX: na create altijd joinen
-  document.querySelector("#create").onclick = () => {
-    const name = myName();
-    if (!name) return showMsg("Vul je naam in.");
+  // ✅ FIX: Create = NIET dubbel joinen
+  const createBtn = document.querySelector("#create");
+  if (createBtn) {
+    createBtn.onclick = () => {
+      const name = myName();
+      if (!name) return showMsg("Vul je naam in.");
 
-    socket.emit("room:create", { name }, (resCreate) => {
-      if (!resCreate?.ok) return showMsg(resCreate?.error ?? "Create mislukt.");
+      socket.emit("room:create", { name }, (resCreate) => {
+        if (!resCreate?.ok) return showMsg(resCreate?.error ?? "Create mislukt.");
 
-      const code = String(resCreate.code || "").toUpperCase();
-      if (!code) return showMsg("Create gaf geen room code terug.");
+        const code = String(resCreate.code || "").toUpperCase();
+        if (!code) return showMsg("Create gaf geen room code terug.");
 
-      socket.emit("room:join", { code, name }, (resJoin) => {
-        if (!resJoin?.ok) return showMsg(resJoin?.error ?? "Join na create mislukt.");
+        // Normaal: server zet maker al in room + geeft status mee
+        if (resCreate.status) {
+          state.roomCode = code;
+          applyLobbyStatus(resCreate.status);
+          state.screen = "lobby";
+          render();
+          return;
+        }
 
-        state.roomCode = resJoin.code ?? code;
-        applyLobbyStatus(resJoin.status);
+        // Fallback: enkel joinen als er geen status meegegeven is
+        socket.emit("room:join", { code, name }, (resJoin) => {
+          if (!resJoin?.ok) return showMsg(resJoin?.error ?? "Join na create mislukt.");
+
+          state.roomCode = resJoin.code ?? code;
+          applyLobbyStatus(resJoin.status);
+          state.screen = "lobby";
+          render();
+        });
+      });
+    };
+  }
+
+  const joinBtn = document.querySelector("#join");
+  if (joinBtn) {
+    joinBtn.onclick = () => {
+      const code = document.querySelector("#code").value.trim().toUpperCase();
+      const name = myName();
+      if (!name) return showMsg("Vul je naam in.");
+      if (!code) return showMsg("Geef een room code in.");
+
+      socket.emit("room:join", { code, name }, (res) => {
+        if (!res?.ok) return showMsg(res?.error ?? "Join mislukt.");
+        state.roomCode = res.code;
+        applyLobbyStatus(res.status);
         state.screen = "lobby";
         render();
       });
-    });
-  };
-
-  document.querySelector("#join").onclick = () => {
-    const code = document.querySelector("#code").value.trim().toUpperCase();
-    const name = myName();
-    if (!name) return showMsg("Vul je naam in.");
-    if (!code) return showMsg("Geef een room code in.");
-
-    socket.emit("room:join", { code, name }, (res) => {
-      if (!res?.ok) return showMsg(res?.error ?? "Join mislukt.");
-      state.roomCode = res.code;
-      applyLobbyStatus(res.status);
-      state.screen = "lobby";
-      render();
-    });
-  };
+    };
+  }
 }
 
 /* ---------- LOBBY ---------- */
@@ -219,31 +242,37 @@ function renderLobby() {
   if (readyBtn) readyBtn.onclick = () => socket.emit("start:vote");
 
   const backBtn = document.querySelector("#backBtn");
-  if (backBtn) backBtn.onclick = () => {
-    state.screen = "home";
-    state.roomCode = "";
-    state.lobby = { host: "", players: [], votes: 0, required: 0, youVoted: false };
-    state.game = null;
-    state.memoryGuesses = ["", "", "", ""];
-    render();
-  };
+  if (backBtn)
+    backBtn.onclick = () => {
+      state.screen = "home";
+      state.roomCode = "";
+      state.lobby = { host: "", players: [], votes: 0, required: 0, youVoted: false };
+      state.game = null;
+      state.memoryGuesses = ["", "", "", ""];
+      render();
+    };
 
   const playersBtn = document.querySelector("#playersBtn");
-  if (playersBtn) playersBtn.onclick = () => {
-    openSheet(
-      "Spelers",
-      `
-        <ul class="list">
-          ${players.map(p => `
-            <li class="listItem">
-              <span>${escapeHtml(p)}</span>
-              ${p === state.lobby.host ? `<span class="chip">maker</span>` : ``}
-            </li>
-          `).join("")}
-        </ul>
-      `
-    );
-  };
+  if (playersBtn)
+    playersBtn.onclick = () => {
+      openSheet(
+        "Spelers",
+        `
+          <ul class="list">
+            ${players
+              .map(
+                (p) => `
+              <li class="listItem">
+                <span>${escapeHtml(p)}</span>
+                ${p === state.lobby.host ? `<span class="chip">maker</span>` : ``}
+              </li>
+            `
+              )
+              .join("")}
+          </ul>
+        `
+      );
+    };
 }
 
 /* ---------- GAME ---------- */
@@ -256,18 +285,21 @@ function renderGame() {
 
   const phase = g.phase ?? "";
   const phaseLabel =
-    phase === "review" ? "Review" :
-    phase === "claim" ? "Claim" :
-    phase === "resolve" ? "Resolve" :
-    phase === "drink" ? "Drink" :
-    phase === "memory" ? "Memory" : phase;
+    phase === "review"
+      ? "Review"
+      : phase === "claim"
+      ? "Claim"
+      : phase === "resolve"
+      ? "Resolve"
+      : phase === "drink"
+      ? "Drink"
+      : phase === "memory"
+      ? "Memory"
+      : phase;
 
   let timerChip = "";
-  if (phase === "review") {
-    timerChip = `<span class="chip" id="timerChip">Start</span>`;
-  } else if (phase === "claim") {
-    timerChip = `<span class="chip" id="timerChip">Auto</span>`;
-  }
+  if (phase === "review") timerChip = `<span class="chip" id="timerChip">Start</span>`;
+  if (phase === "claim") timerChip = `<span class="chip" id="timerChip">Auto</span>`;
 
   const cardValue = g.current?.value ? escapeHtml(g.current.value) : "—";
   const row = g.current?.row ?? "";
@@ -275,10 +307,12 @@ function renderGame() {
 
   const handLocked = Boolean(g.handLocked);
   const yourHand = g.yourHand ?? [];
-  const handHtml = yourHand.map((c, i) => {
-    const shown = (phase === "review" || !handLocked) ? escapeHtml(c?.v ?? "") : "🂠";
-    return `<button class="cardBtn" disabled>${shown}<small>${i + 1}</small></button>`;
-  }).join("");
+  const handHtml = yourHand
+    .map((c, i) => {
+      const shown = phase === "review" || !handLocked ? escapeHtml(c?.v ?? "") : "🂠";
+      return `<button class="cardBtn" disabled>${shown}<small>${i + 1}</small></button>`;
+    })
+    .join("");
 
   const actionsHtml = buildMustDoActions(g);
   const bottomHtml = buildBottomBar(g);
@@ -309,9 +343,7 @@ function renderGame() {
           </div>
         </div>
 
-        <div class="handWrap">
-          ${handHtml}
-        </div>
+        <div class="handWrap">${handHtml}</div>
       </section>
 
       ${actionsHtml}
@@ -348,7 +380,7 @@ function buildMustDoActions(g) {
           <div class="titleMid">Drink</div>
           <span class="chip">${tasks.length}</span>
         </div>
-        <div class="smallMuted">${tasks.map(t => escapeHtml(t)).join(" · ")}</div>
+        <div class="smallMuted">${tasks.map((t) => escapeHtml(t)).join(" · ")}</div>
         <div class="spacer8"></div>
         <button class="btn btnGreen" id="drinkAckBtn" ${youAck ? "disabled" : ""}>Gedronken ✅</button>
       </section>
@@ -375,10 +407,12 @@ function buildMustDoActions(g) {
 
       if (c.status === "awaiting_proof" && c.claimer === me) {
         const picks = new Set(c.proofPicks ?? []);
-        const pickBtns = [0, 1, 2, 3].map(i => {
-          const mark = picks.has(i) ? "✅" : "🂠";
-          return `<button class="cardBtn" data-act="pick" data-idx="${idx}" data-card="${i}">${mark}<small>${i + 1}</small></button>`;
-        }).join("");
+        const pickBtns = [0, 1, 2, 3]
+          .map((i) => {
+            const mark = picks.has(i) ? "✅" : "🂠";
+            return `<button class="cardBtn" data-act="pick" data-idx="${idx}" data-card="${i}">${mark}<small>${i + 1}</small></button>`;
+          })
+          .join("");
 
         htmlParts.push(`
           <section class="panel tight">
@@ -404,7 +438,7 @@ function wireMustDoActions(g) {
     if (btn) btn.onclick = () => socket.emit("drink:ack");
   }
 
-  app.querySelectorAll("[data-act]").forEach(el => {
+  app.querySelectorAll("[data-act]").forEach((el) => {
     el.onclick = () => {
       const act = el.dataset.act;
       const idx = parseInt(el.dataset.idx, 10);
@@ -435,11 +469,11 @@ function buildBottomBar(g) {
   }
 
   if (phase === "claim") {
-    const players = (g.players ?? []).filter(p => p !== me);
+    const players = (g.players ?? []).filter((p) => p !== me);
     const decision = round.yourDecision ?? null;
     const disabled = decision !== null || !g.current || players.length === 0;
 
-    const targetOptions = players.map(p => `<option value="${escapeAttr(p)}">${escapeHtml(p)}</option>`).join("");
+    const targetOptions = players.map((p) => `<option value="${escapeAttr(p)}">${escapeHtml(p)}</option>`).join("");
 
     return `
       <select class="selectSmall" id="mult" ${disabled ? "disabled" : ""}>
@@ -513,11 +547,15 @@ function buildDetailsSheet(g) {
     <div class="sheetSection">
       <div class="sheetSectionTitle">Spelers</div>
       <ul class="list">
-        ${players.map(p => `
+        ${players
+          .map(
+            (p) => `
           <li class="listItem">
             <span>${escapeHtml(p)}${p === me ? " (jij)" : ""}</span>
           </li>
-        `).join("")}
+        `
+          )
+          .join("")}
       </ul>
     </div>
   `;
@@ -525,23 +563,27 @@ function buildDetailsSheet(g) {
   const claimsHtml = `
     <div class="sheetSection">
       <div class="sheetSectionTitle">Claims</div>
-      ${claims.length === 0 ? `<div class="smallMuted">Geen.</div>` : `
+      ${
+        claims.length === 0
+          ? `<div class="smallMuted">Geen.</div>`
+          : `
         <ul class="list">
-          ${claims.map(c => {
-            const status =
-              c.status === "pending_belief" ? "geloof?" :
-              c.status === "awaiting_proof" ? "bewijs" :
-              "ok";
+          ${claims
+            .map((c) => {
+              const status =
+                c.status === "pending_belief" ? "geloof?" : c.status === "awaiting_proof" ? "bewijs" : "ok";
 
-            return `
-              <li class="listItem">
-                <span>${escapeHtml(c.claimer)} → ${escapeHtml(c.target)} (x${escapeHtml(c.mult)})</span>
-                <span class="chip">${escapeHtml(status)}</span>
-              </li>
-            `;
-          }).join("")}
+              return `
+                <li class="listItem">
+                  <span>${escapeHtml(c.claimer)} → ${escapeHtml(c.target)} (x${escapeHtml(c.mult)})</span>
+                  <span class="chip">${escapeHtml(status)}</span>
+                </li>
+              `;
+            })
+            .join("")}
         </ul>
-      `}
+      `
+      }
     </div>
   `;
 
@@ -549,7 +591,9 @@ function buildDetailsSheet(g) {
     <div class="sheetSection">
       <div class="sheetSectionTitle">Piramide</div>
       <div class="smallMuted">
-        Omgedraaid: <b>${escapeHtml(String(Math.max(0, (g.revealedIndex ?? -1) + 1)))}</b> / ${escapeHtml(String(g.pyramidTotal ?? "?"))}
+        Omgedraaid: <b>${escapeHtml(String(Math.max(0, (g.revealedIndex ?? -1) + 1)))}</b> / ${escapeHtml(
+    String(g.pyramidTotal ?? "?")
+  )}
         ${g.current?.row ? ` · Rij <b>${escapeHtml(String(g.current.row))}</b>` : ""}
       </div>
     </div>
@@ -573,9 +617,15 @@ function renderMemory() {
         <div class="titleBig">Eindtest</div>
 
         <div class="grid2">
-          ${state.memoryGuesses.map((val, i) => `
-            <input class="input" data-gi="${i}" value="${escapeAttr(val)}" placeholder="Slot ${i+1}" ${yourSubmitted ? "disabled" : ""} />
-          `).join("")}
+          ${state.memoryGuesses
+            .map(
+              (val, i) => `
+            <input class="input" data-gi="${i}" value="${escapeAttr(val)}" placeholder="Slot ${i + 1}" ${
+                yourSubmitted ? "disabled" : ""
+              } />
+          `
+            )
+            .join("")}
         </div>
 
         <div class="spacer8"></div>
@@ -585,7 +635,7 @@ function renderMemory() {
     `<button class="btn" id="detailsBottomBtn">Details</button>`
   );
 
-  app.querySelectorAll("input[data-gi]").forEach(inp => {
+  app.querySelectorAll("input[data-gi]").forEach((inp) => {
     inp.oninput = () => {
       const i = parseInt(inp.dataset.gi, 10);
       state.memoryGuesses[i] = inp.value;
@@ -601,6 +651,7 @@ function renderMemory() {
 
 /* ---------- Socket events ---------- */
 function applyLobbyStatus(status) {
+  if (!status) return;
   state.lobby.host = status.host;
   state.lobby.players = status.players;
   state.lobby.votes = status.votes;
@@ -608,7 +659,7 @@ function applyLobbyStatus(status) {
   state.lobby.youVoted = (status.voters ?? []).includes(myName());
 }
 
-// ✅ STRUCTURELE FIX: render bij status updates wanneer je in lobby zit
+// ✅ lobby realtime update + host ziet joiners
 socket.on("room:status", (status) => {
   applyLobbyStatus(status);
   if (state.screen === "lobby") render();
@@ -621,11 +672,11 @@ socket.on("game:state", (gameState) => {
     state.memoryGuesses = ["", "", "", ""];
   }
 
-  state.screen = (gameState.phase === "memory") ? "memory" : "game";
+  state.screen = gameState.phase === "memory" ? "memory" : "game";
   render();
 });
 
-/* ---------- utils ---------- */
+/* ---------- Utils ---------- */
 function showMsg(text) {
   const el = document.querySelector("#msg");
   if (el) el.textContent = text;
@@ -639,6 +690,7 @@ function escapeHtml(s) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
+
 function escapeAttr(s) {
   return escapeHtml(s).replaceAll("\n", " ");
 }
