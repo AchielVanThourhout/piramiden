@@ -332,10 +332,6 @@ function renderGame() {
             <div class="bigValue">${cardValue}</div>
           </div>
 
-          <div class="pyramidMini">
-            ${buildPyramidMini(g)}
-          </div>
-
           <div class="bigCard">
             <div class="bigLabel">Rij</div>
             <div class="bigValue">${escapeHtml(row)}</div>
@@ -345,6 +341,10 @@ function renderGame() {
             <div class="bigLabel">Progress</div>
             <div class="bigValue" style="font-size:18px;">${escapeHtml(prog)}</div>
           </div>
+        </div>
+
+        <div class="pyramidMini">
+            ${buildPyramidMini(g)}
         </div>
 
         <div class="handWrap">${handHtml}</div>
