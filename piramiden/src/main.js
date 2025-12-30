@@ -1,3 +1,4 @@
+import "./style.css";
 import { io } from "socket.io-client";
 
 const socket = io(import.meta.env.VITE_SERVER_URL || "http://localhost:3000");
@@ -12,7 +13,6 @@ let state = {
   now: Date.now()
 };
 
-// klokje voor countdowns (review + claim)
 setInterval(() => {
   state.now = Date.now();
   if (state.screen === "game" && (state.game?.phase === "claim" || state.game?.phase === "review")) render();
@@ -25,27 +25,49 @@ function showMsg(text) {
   if (el) el.textContent = text;
 }
 
+function shell(title, rightHtml, innerHtml) {
+  app.innerHTML = `
+    <div class="container">
+      <div class="topbar">
+        <div class="brand">
+          <div style="width:12px;height:12px;border-radius:4px;background:var(--accent); box-shadow:0 0 0 4px rgba(124,92,255,.15);"></div>
+          <div>${escapeHtml(title)}</div>
+        </div>
+        <div>${rightHtml ?? ""}</div>
+      </div>
+
+      ${innerHtml}
+    </div>
+  `;
+}
+
 function render() {
   if (state.screen === "home") {
-    app.innerHTML = `
-      <h1>Piramiden</h1>
+    shell("Piramiden", `<span class="badge">online</span>`, `
+      <div class="card">
+        <div class="h1">Piramiden</div>
+        <div class="small">Maak een room of join met een code.</div>
 
-      <div style="display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap;">
-        <input id="name" placeholder="Jouw naam" value="${escapeHtml(state.name)}" />
-        <button id="create">Create room</button>
+        <div class="spacer"></div>
+
+        <div class="stack">
+          <input class="input" id="name" placeholder="Jouw naam" value="${escapeAttr(state.name)}" />
+
+          <div class="grid2">
+            <button class="btn btn-primary" id="create">Create room</button>
+            <div class="row" style="width:100%;">
+              <input class="input" id="code" placeholder="Room code" />
+            </div>
+          </div>
+
+          <button class="btn" id="join">Join room</button>
+
+          <div id="msg" class="msg"></div>
+        </div>
       </div>
+    `);
 
-      <div style="display:flex; gap:8px; flex-wrap:wrap;">
-        <input id="code" placeholder="Room code" />
-        <button id="join">Join room</button>
-      </div>
-
-      <p id="msg" style="margin-top:10px; color:#b00;"></p>
-    `;
-
-    document.querySelector("#name").oninput = (e) => {
-      state.name = e.target.value;
-    };
+    document.querySelector("#name").oninput = (e) => { state.name = e.target.value; };
 
     document.querySelector("#create").onclick = () => {
       const name = state.name.trim();
@@ -79,29 +101,41 @@ function render() {
   }
 
   if (state.screen === "lobby") {
-    app.innerHTML = `
-      <h1>Lobby</h1>
-      <p><b>Room:</b> ${escapeHtml(state.roomCode)}</p>
-      <p><b>Jij:</b> ${escapeHtml(state.name)}</p>
+    shell("Lobby", `<span class="badge">Room ${escapeHtml(state.roomCode)}</span>`, `
+      <div class="card">
+        <div class="row" style="justify-content:space-between;">
+          <div>
+            <div class="h1" style="margin-bottom:6px;">Lobby</div>
+            <div class="small"><b>Jij:</b> ${escapeHtml(state.name)}</div>
+          </div>
+          <div class="pill">Ready <b>${state.lobby.votes}</b> / ${state.lobby.required}</div>
+        </div>
 
-      <h3>Spelers</h3>
-      <ul>
-        ${state.lobby.players.map(p => `<li>${escapeHtml(p)}${p===state.lobby.host ? " (maker)" : ""}</li>`).join("")}
-      </ul>
+        <div class="h2">Spelers</div>
+        <ul class="list">
+          ${state.lobby.players.map(p => `
+            <li>
+              <span>${escapeHtml(p)}${p===state.lobby.host ? ` <span class="badge">maker</span>` : ""}</span>
+            </li>
+          `).join("")}
+        </ul>
 
-      <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
-        <button id="start" ${state.lobby.players.length < 2 ? "disabled" : ""}>
-          ${state.lobby.youVoted ? "Ready ✅ (klik om uit te zetten)" : "Start spel (Ready)"}
-        </button>
-        <button id="back">Terug</button>
+        <div class="notice">
+          Iedereen klikt <b>Ready</b>. Zodra genoeg mensen klaar zijn start het spel.
+        </div>
+
+        <div id="msg" class="msg"></div>
       </div>
 
-      <p style="margin-top:10px; opacity:.7;">
-        Ready: ${state.lobby.votes} / ${state.lobby.required}
-      </p>
-
-      <p id="msg" style="margin-top:10px; color:#b00;"></p>
-    `;
+      <div class="stickybar">
+        <div class="inner">
+          <button class="btn btn-primary" id="start" ${state.lobby.players.length < 2 ? "disabled" : ""}>
+            ${state.lobby.youVoted ? "Ready ✅ (toggle)" : "Ready"}
+          </button>
+          <button class="btn" id="back">Terug</button>
+        </div>
+      </div>
+    `);
 
     document.querySelector("#start").onclick = () => socket.emit("start:vote");
 
@@ -118,7 +152,7 @@ function render() {
   }
 
   if (!state.game) {
-    app.innerHTML = `<p>Wachten op game state...</p>`;
+    shell("Piramiden", "", `<div class="card"><div class="small">Wachten op game state...</div></div>`);
     return;
   }
 
@@ -130,12 +164,11 @@ function renderGame() {
   const g = state.game;
 
   const handHtml = (g.yourHand ?? []).map((c, i) => {
-    // in review altijd zichtbaar, daarna zoals vroeger
     const shown = (g.phase === "review" || !g.handLocked) ? escapeHtml(c?.v ?? "") : "🂠";
-    return `<button disabled style="width:54px;height:54px;">${shown}<br/><small>${i+1}</small></button>`;
-  }).join(" ");
+    return `<button class="cardbtn" disabled>${shown}<small>${i+1}</small></button>`;
+  }).join("");
 
-  // REVIEW UI
+  // REVIEW
   if (g.phase === "review") {
     const endsAt = g.review?.endsAt ?? 0;
     const secsLeft = Math.max(0, Math.ceil((endsAt - state.now) / 1000));
@@ -143,55 +176,60 @@ function renderGame() {
     const readyCount = g.review?.readyCount ?? 0;
     const total = g.review?.totalPlayers ?? g.players.length;
 
-    app.innerHTML = `
-      <h1>Spel</h1>
-      <p><b>Room:</b> ${escapeHtml(state.roomCode)} — <b>Spelers:</b> ${g.players.length}</p>
-      <p><b>Jij:</b> ${escapeHtml(state.name)}</p>
+    shell("Spel", `<span class="badge">Room ${escapeHtml(state.roomCode)}</span>`, `
+      <div class="card">
+        <div class="row" style="justify-content:space-between;">
+          <div>
+            <div class="h1" style="margin-bottom:6px;">Bekijk je kaarten</div>
+            <div class="small"><b>Jij:</b> ${escapeHtml(state.name)}</div>
+          </div>
+          <div class="pill">Start in <b>${secsLeft}s</b></div>
+        </div>
 
-      <h3>Bekijk je kaarten</h3>
-      <div style="display:flex; gap:8px; margin-bottom:10px;">${handHtml}</div>
+        <div class="h2">Hand</div>
+        <div class="hand">${handHtml}</div>
 
-      <p style="opacity:.7;">
-        Iedereen moet bevestigen. Start automatisch over <b>${secsLeft}s</b>.
-      </p>
-
-      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-        <button id="ready" ${yourReady ? "disabled" : ""}>Ik heb mijn kaarten bekeken ✅</button>
-        <span style="opacity:.7;">Klaar: ${readyCount} / ${total}</span>
+        <div class="notice">
+          Klaar: <b>${readyCount}</b> / ${total}. Iedereen moet bevestigen of de timer start automatisch.
+        </div>
       </div>
 
-      <h3>Log</h3>
-      <ul>
-        ${(g.log ?? []).slice(-10).map(x => `<li>${escapeHtml(x)}</li>`).join("")}
-      </ul>
-    `;
+      <div class="stickybar">
+        <div class="inner">
+          <button class="btn btn-green" id="ready" ${yourReady ? "disabled" : ""}>
+            Ik heb mijn kaarten bekeken ✅
+          </button>
+          <button class="btn" id="noop" disabled>${yourReady ? "Klaar ✅" : "Nog niet klaar"}</button>
+        </div>
+      </div>
+    `);
 
     document.querySelector("#ready").onclick = () => socket.emit("review:ready");
     return;
   }
 
-  // ------ vanaf hier: claim/resolve/drink (zoals ervoor) ------
+  // CLAIM/RESOLVE/DRINK
   const targets = (g.players ?? []).filter(p => p !== state.name);
   const targetOptions = targets.map(p => `<option value="${escapeAttr(p)}">${escapeHtml(p)}</option>`).join("");
 
   const passEndsAt = g.round?.passEndsAt ?? 0;
   const secsLeft = Math.max(0, Math.ceil((passEndsAt - state.now) / 1000));
 
-  const phase = g.phase; // claim | resolve | drink
+  const phase = g.phase;
   const decision = g.round?.yourDecision ?? null;
 
   const claimDisabled = phase !== "claim" || decision !== null || !g.current || targets.length === 0;
 
   const claimsHtml = (g.round?.claims ?? []).length === 0
-    ? `<p style="opacity:.7;">Nog geen claims.</p>`
+    ? `<div class="small">Nog geen claims.</div>`
     : g.round.claims.map((c, idx) => {
         let actions = "";
 
         if (phase === "resolve" && c.status === "pending_belief" && c.target === state.name) {
           actions = `
-            <div style="display:flex; gap:8px; margin-top:6px;">
-              <button data-act="believe" data-i="${idx}">Geloof</button>
-              <button data-act="doubt" data-i="${idx}">Niet geloven</button>
+            <div class="row" style="margin-top:10px;">
+              <button class="btn btn-green" data-act="believe" data-i="${idx}">Geloof</button>
+              <button class="btn btn-danger" data-act="doubt" data-i="${idx}">Niet geloven</button>
             </div>
           `;
         }
@@ -200,12 +238,12 @@ function renderGame() {
           const picks = new Set(c.proofPicks ?? []);
           const pickBtns = [0,1,2,3].map(i => {
             const mark = picks.has(i) ? "✅" : "🂠";
-            return `<button data-act="pick" data-i="${idx}" data-card="${i}" style="width:54px;height:54px;">${mark}<br/><small>${i+1}</small></button>`;
-          }).join(" ");
+            return `<button class="cardbtn" data-act="pick" data-i="${idx}" data-card="${i}">${mark}<small>${i+1}</small></button>`;
+          }).join("");
 
           actions = `
-            <p style="margin:6px 0 4px 0;"><b>Toon ${c.mult} kaart(en)</b> (klik slots):</p>
-            <div style="display:flex; gap:8px;">${pickBtns}</div>
+            <div class="notice"><b>Toon ${c.mult} kaart(en)</b>: klik slots hieronder.</div>
+            <div class="hand">${pickBtns}</div>
           `;
         }
 
@@ -215,9 +253,9 @@ function renderGame() {
           "afgehandeld";
 
         return `
-          <div style="border:1px solid #ddd; border-radius:8px; padding:10px; margin:8px 0;">
-            <div><b>${escapeHtml(c.claimer)}</b> zegt “ik heb ’m” (x${c.mult}) → nomineert <b>${escapeHtml(c.target)}</b></div>
-            <div style="opacity:.7; margin-top:4px;">Status: ${statusTxt}</div>
+          <div class="card" style="margin:10px 0; padding:12px;">
+            <div><b>${escapeHtml(c.claimer)}</b> zegt “ik heb ’m” (x${c.mult}) → <b>${escapeHtml(c.target)}</b></div>
+            <div class="small" style="margin-top:6px;">Status: ${statusTxt}</div>
             ${actions}
           </div>
         `;
@@ -228,85 +266,76 @@ function renderGame() {
   const yourAck = Boolean(g.round?.yourDrinkAck);
 
   const drinkHtml = (phase !== "drink")
-    ? `<p style="opacity:.7;">Drinken komt pas na de afhandeling.</p>`
+    ? `<div class="small">Drinken komt na de afhandeling.</div>`
     : (
         mustAck
           ? `
-            <ul>${drinkTasks.map(t => `<li><b>${escapeHtml(t)}</b></li>`).join("")}</ul>
-            <button id="drinkAck" ${yourAck ? "disabled" : ""}>Gedronken ✅</button>
-            <p style="opacity:.7; margin-top:6px;">Je moet bevestigen voor we verder gaan.</p>
+            <ul class="list">
+              ${drinkTasks.map(t => `<li><span><b>${escapeHtml(t)}</b></span></li>`).join("")}
+            </ul>
+            <button class="btn btn-green" id="drinkAck" ${yourAck ? "disabled" : ""}>Gedronken ✅</button>
+            <div class="small" style="margin-top:8px;">Bevestig om verder te gaan.</div>
           `
-          : `<p><b>Geen drank voor jou deze ronde.</b> Wachten op anderen…</p>`
+          : `<div class="small"><b>Geen drank voor jou.</b> Wachten op anderen…</div>`
       );
 
-  app.innerHTML = `
-    <h1>Spel</h1>
-    <p><b>Room:</b> ${escapeHtml(state.roomCode)} — <b>Spelers:</b> ${g.players.length}</p>
-    <p><b>Jij:</b> ${escapeHtml(state.name)}</p>
-
-    <h3>Hand</h3>
-    <div style="display:flex; gap:8px; margin-bottom:6px;">${handHtml}</div>
-    <p style="opacity:.7; margin-top:0;">
-      ${g.handLocked ? "Hand ligt omgedraaid (geheugen!)" : "Nog zichtbaar, na eerste kaart gaat dit toe."}
-    </p>
-
-    <h3>Piramidekaart</h3>
-    <p>
-      ${
-        g.current
-          ? `<b>Kaart:</b> ${escapeHtml(g.current.value)} — <b>Rij:</b> ${g.current.row} — <b>Basis:</b> ${escapeHtml(g.current.base)}`
-          : "Nog geen kaart omgedraaid."
-      }
-    </p>
-    <p style="opacity:.7;">Omgedraaid: ${Math.max(0, g.revealedIndex + 1)} / ${g.pyramidTotal}</p>
-
-    <hr/>
-
-    <h3>Fase: ${escapeHtml(phase.toUpperCase())}</h3>
-
-    <div style="border:1px solid #eee; padding:10px; border-radius:10px;">
-      <h3>Claim</h3>
-
-      ${
-        phase === "claim"
-          ? `<p style="opacity:.7;">Kies: “ik heb ’m” of “ik heb ’m niet”. Auto-pass over <b>${secsLeft}s</b>.</p>`
-          : `<p style="opacity:.7;">Claimfase is voorbij.</p>`
-      }
-
-      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-        <button id="claimBtn" ${claimDisabled ? "disabled" : ""}>Ik heb ’m</button>
-        <button id="passBtn" ${phase !== "claim" || decision !== null ? "disabled" : ""}>Ik heb ’m niet</button>
-
-        <label>Multiplier:</label>
-        <select id="mult" ${claimDisabled ? "disabled" : ""}>
-          <option value="1">x1</option>
-          <option value="2">x2</option>
-          <option value="3">x3</option>
-          <option value="4">x4</option>
-        </select>
-
-        <label>Nomineer:</label>
-        <select id="target" ${claimDisabled ? "disabled" : ""}>
-          ${targetOptions}
-        </select>
+  shell("Spel", `<span class="badge">Room ${escapeHtml(state.roomCode)}</span>`, `
+    <div class="card">
+      <div class="row" style="justify-content:space-between;">
+        <div>
+          <div class="h1" style="margin-bottom:6px;">Ronde</div>
+          <div class="small"><b>Jij:</b> ${escapeHtml(state.name)}</div>
+        </div>
+        <div class="pill">${g.current ? `Kaart <b>${escapeHtml(g.current.value)}</b>` : "Nog geen kaart"}</div>
       </div>
 
-      <p style="margin-top:8px;">
-        <b>Jouw keuze:</b> ${decision ? escapeHtml(decision) : "<i>nog niet gekozen</i>"}
-      </p>
+      <div class="h2">Hand</div>
+      <div class="hand">${handHtml}</div>
+      <div class="small">${g.handLocked ? "Hand is omgedraaid (geheugen!)." : "Hand is nog zichtbaar."}</div>
+
+      <div class="h2">Piramide</div>
+      <div class="notice">
+        ${g.current
+          ? `<b>Rij:</b> ${g.current.row} — <b>Basis:</b> ${escapeHtml(g.current.base)}`
+          : `Nog geen kaart omgedraaid.`}
+        <div class="small" style="margin-top:6px;">Omgedraaid: ${Math.max(0, g.revealedIndex + 1)} / ${g.pyramidTotal}</div>
+      </div>
+
+      <div class="h2">Claims</div>
+      ${claimsHtml}
+
+      <div class="h2">Drinken</div>
+      ${drinkHtml}
     </div>
 
-    <h3>Claims</h3>
-    ${claimsHtml}
-
-    <h3>Drinken</h3>
-    ${drinkHtml}
-
-    <h3>Log</h3>
-    <ul>
-      ${(g.log ?? []).slice(-10).map(x => `<li>${escapeHtml(x)}</li>`).join("")}
-    </ul>
-  `;
+    <div class="stickybar">
+      <div class="inner">
+        <button class="btn btn-primary" id="claimBtn" ${claimDisabled ? "disabled" : ""}>
+          Ik heb ’m
+        </button>
+        <button class="btn" id="passBtn" ${phase !== "claim" || decision !== null ? "disabled" : ""}>
+          Ik heb ’m niet
+        </button>
+      </div>
+      <div class="container" style="padding: 10px 14px 0;">
+        <div class="row">
+          <select id="mult" ${claimDisabled ? "disabled" : ""}>
+            <option value="1">x1</option>
+            <option value="2">x2</option>
+            <option value="3">x3</option>
+            <option value="4">x4</option>
+          </select>
+          <select id="target" ${claimDisabled ? "disabled" : ""}>
+            ${targetOptions}
+          </select>
+          <div class="pill">${phase === "claim" ? `Auto-pass in <b>${secsLeft}s</b>` : `Fase: <b>${escapeHtml(phase)}</b>`}</div>
+        </div>
+        <div class="small" style="margin-top:8px;">
+          Jouw keuze: ${decision ? `<b>${escapeHtml(decision)}</b>` : `<i>nog niet gekozen</i>`}
+        </div>
+      </div>
+    </div>
+  `);
 
   const claimBtn = document.querySelector("#claimBtn");
   if (claimBtn) {
@@ -341,35 +370,29 @@ function renderGame() {
 function renderMemory() {
   const g = state.game;
 
-  const submittedText = g.memory?.yourSubmitted ? "Ingediend." : "";
-  const progress = `${g.memory?.submittedCount ?? 0} / ${g.memory?.totalPlayers ?? 0} ingediend`;
+  shell("Eindtest", `<span class="badge">Room ${escapeHtml(state.roomCode)}</span>`, `
+    <div class="card">
+      <div class="h1">Eindtest</div>
+      <div class="small"><b>Jij:</b> ${escapeHtml(state.name)}</div>
 
-  const inputs = state.memoryGuesses.map((val, i) => `
-    <div style="display:flex; gap:8px; align-items:center; margin:6px 0;">
-      <b style="width:60px;">Slot ${i+1}</b>
-      <input data-gi="${i}" value="${escapeAttr(val)}" placeholder="bv. 7 / K / A / 10" ${g.memory?.yourSubmitted ? "disabled" : ""} />
+      <div class="h2">Raad je 4 kaarten (per slot)</div>
+
+      <div class="stack">
+        ${state.memoryGuesses.map((val, i) => `
+          <div class="row">
+            <div class="pill" style="min-width:92px;">Slot <b>${i+1}</b></div>
+            <input class="input" data-gi="${i}" value="${escapeAttr(val)}" placeholder="bv. 7 / K / A / 10" ${g.memory?.yourSubmitted ? "disabled" : ""} />
+          </div>
+        `).join("")}
+
+        <button class="btn btn-primary" id="submit" ${g.memory?.yourSubmitted ? "disabled" : ""}>Indienen</button>
+
+        <div class="notice">
+          Voortgang: <b>${g.memory?.submittedCount ?? 0}</b> / ${g.memory?.totalPlayers ?? 0} ingediend
+        </div>
+      </div>
     </div>
-  `).join("");
-
-  app.innerHTML = `
-    <h1>Eindtest</h1>
-    <p><b>Room:</b> ${escapeHtml(state.roomCode)} — <b>Jij:</b> ${escapeHtml(state.name)}</p>
-
-    <h3>Raad de waardes per slot</h3>
-    ${inputs}
-
-    <div style="display:flex; gap:8px; margin-top:10px;">
-      <button id="submit" ${g.memory?.yourSubmitted ? "disabled" : ""}>Indienen</button>
-      <span style="opacity:.7;">${submittedText}</span>
-    </div>
-
-    <p style="margin-top:10px; opacity:.7;">Voortgang: ${progress}</p>
-
-    <h3>Log</h3>
-    <ul>
-      ${(g.log ?? []).slice(-12).map(x => `<li>${escapeHtml(x)}</li>`).join("")}
-    </ul>
-  `;
+  `);
 
   app.querySelectorAll("input[data-gi]").forEach(inp => {
     inp.oninput = () => {
@@ -383,7 +406,7 @@ function renderMemory() {
   };
 }
 
-/* ---------------- socket events ---------------- */
+/* socket events */
 function applyLobbyStatus(status) {
   state.lobby.host = status.host;
   state.lobby.players = status.players;
@@ -408,7 +431,7 @@ socket.on("game:state", (gameState) => {
   render();
 });
 
-/* ---------------- utils ---------------- */
+/* utils */
 function escapeHtml(s) {
   return String(s ?? "")
     .replaceAll("&", "&amp;")
