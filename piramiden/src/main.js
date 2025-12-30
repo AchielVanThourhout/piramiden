@@ -13,386 +13,580 @@ let state = {
   now: Date.now()
 };
 
-setInterval(() => {
-  state.now = Date.now();
-  if (state.screen === "game" && (state.game?.phase === "claim" || state.game?.phase === "review")) render();
-}, 300);
+let ui = {
+  sheetOpen: false,
+  sheetTitle: "",
+  sheetHtml: ""
+};
 
 const app = document.querySelector("#app");
 
-function showMsg(text) {
-  const el = document.querySelector("#msg");
-  if (el) el.textContent = text;
+function myName() {
+  return (state.name ?? "").trim();
 }
 
-function shell(title, rightHtml, innerHtml) {
-  app.innerHTML = `
-    <div class="container">
-      <div class="topbar">
-        <div class="brand">
-          <div style="width:12px;height:12px;border-radius:4px;background:var(--accent); box-shadow:0 0 0 4px rgba(124,92,255,.15);"></div>
-          <div>${escapeHtml(title)}</div>
-        </div>
-        <div>${rightHtml ?? ""}</div>
-      </div>
+function openSheet(title, html) {
+  ui.sheetOpen = true;
+  ui.sheetTitle = title ?? "";
+  ui.sheetHtml = html ?? "";
+  render();
+}
+function closeSheet() {
+  ui.sheetOpen = false;
+  render();
+}
 
-      ${innerHtml}
+setInterval(() => {
+  state.now = Date.now();
+  // re-render tijdens timers/fases
+  if (state.screen === "game" || state.screen === "memory") render();
+  if (state.screen === "lobby") render();
+}, 350);
+
+/* ---------- Shell ---------- */
+function shell(title, rightHtml, mainHtml, bottomHtml = "") {
+  const overlayHtml = `
+    <div class="overlay ${ui.sheetOpen ? "open" : ""}" id="overlay">
+      <div class="sheet" role="dialog" aria-modal="true">
+        <div class="sheetHead">
+          <div class="sheetTitle">${escapeHtml(ui.sheetTitle)}</div>
+          <button class="iconBtn" id="closeSheet" aria-label="Sluit">✕</button>
+        </div>
+        <div class="sheetBody">${ui.sheetHtml}</div>
+      </div>
     </div>
   `;
+
+  app.innerHTML = `
+    <div class="app">
+      <header class="header">
+        <div class="headerLeft">
+          <div class="brandDot"></div>
+          <div class="headerText">
+            <div class="headerTitle">${escapeHtml(title)}</div>
+            <div class="headerSub">${state.roomCode ? `Room ${escapeHtml(state.roomCode)}` : ""}</div>
+          </div>
+        </div>
+        <div class="headerRight">${rightHtml ?? ""}</div>
+      </header>
+
+      <main class="main">
+        ${mainHtml}
+      </main>
+
+      ${bottomHtml ? `<footer class="bottom">${bottomHtml}</footer>` : ""}
+    </div>
+
+    ${overlayHtml}
+  `;
+
+  const ov = document.querySelector("#overlay");
+  if (ov) ov.onclick = (e) => { if (e.target && e.target.id === "overlay") closeSheet(); };
+
+  const cs = document.querySelector("#closeSheet");
+  if (cs) cs.onclick = () => closeSheet();
 }
 
+/* ---------- Render ---------- */
 function render() {
-  if (state.screen === "home") {
-    shell("Piramiden", `<span class="badge">online</span>`, `
-      <div class="card">
-        <div class="h1">Piramiden</div>
-        <div class="small">Maak een room of join met een code.</div>
+  if (state.screen === "home") return renderHome();
+  if (state.screen === "lobby") return renderLobby();
+  if (state.screen === "memory") return renderMemory();
+  return renderGame();
+}
 
-        <div class="spacer"></div>
+/* ---------- HOME ---------- */
+function renderHome() {
+  shell(
+    "Piramiden",
+    `<span class="chip">online</span>`,
+    `
+      <section class="panel">
+        <div class="titleBig">Piramiden</div>
 
         <div class="stack">
           <input class="input" id="name" placeholder="Jouw naam" value="${escapeAttr(state.name)}" />
 
           <div class="grid2">
-            <button class="btn btn-primary" id="create">Create room</button>
-            <div class="row" style="width:100%;">
-              <input class="input" id="code" placeholder="Room code" />
-            </div>
+            <button class="btn btnPrimary" id="create">Create</button>
+            <input class="input" id="code" placeholder="Room code" />
           </div>
 
-          <button class="btn" id="join">Join room</button>
-
+          <button class="btn" id="join">Join</button>
           <div id="msg" class="msg"></div>
         </div>
-      </div>
-    `);
+      </section>
+    `
+  );
 
-    document.querySelector("#name").oninput = (e) => { state.name = e.target.value; };
+  document.querySelector("#name").oninput = (e) => { state.name = e.target.value; };
 
-    document.querySelector("#create").onclick = () => {
-      const name = state.name.trim();
-      if (!name) return showMsg("Vul eerst je naam in.");
+  document.querySelector("#create").onclick = () => {
+    const name = myName();
+    if (!name) return showMsg("Vul je naam in.");
 
-      socket.emit("room:create", { name }, (res) => {
-        if (!res?.ok) return showMsg(res?.error ?? "Create mislukt.");
-        state.roomCode = res.code;
-        applyLobbyStatus(res.status);
-        state.screen = "lobby";
-        render();
-      });
-    };
+    socket.emit("room:create", { name }, (res) => {
+      if (!res?.ok) return showMsg(res?.error ?? "Create mislukt.");
+      state.roomCode = res.code;
+      applyLobbyStatus(res.status);
+      state.screen = "lobby";
+      render();
+    });
+  };
 
-    document.querySelector("#join").onclick = () => {
-      const code = document.querySelector("#code").value.trim().toUpperCase();
-      const name = state.name.trim();
-      if (!name) return showMsg("Vul eerst je naam in.");
-      if (!code) return showMsg("Geef een room code in.");
+  document.querySelector("#join").onclick = () => {
+    const code = document.querySelector("#code").value.trim().toUpperCase();
+    const name = myName();
+    if (!name) return showMsg("Vul je naam in.");
+    if (!code) return showMsg("Geef een room code in.");
 
-      socket.emit("room:join", { code, name }, (res) => {
-        if (!res?.ok) return showMsg(res?.error ?? "Join mislukt.");
-        state.roomCode = res.code;
-        applyLobbyStatus(res.status);
-        state.screen = "lobby";
-        render();
-      });
-    };
+    socket.emit("room:join", { code, name }, (res) => {
+      if (!res?.ok) return showMsg(res?.error ?? "Join mislukt.");
+      state.roomCode = res.code;
+      applyLobbyStatus(res.status);
+      state.screen = "lobby";
+      render();
+    });
+  };
+}
 
-    return;
-  }
+/* ---------- LOBBY ---------- */
+function renderLobby() {
+  const players = state.lobby.players ?? [];
+  const readyTxt = `${state.lobby.votes} / ${state.lobby.required}`;
 
-  if (state.screen === "lobby") {
-    shell("Lobby", `<span class="badge">Room ${escapeHtml(state.roomCode)}</span>`, `
-      <div class="card">
-        <div class="row" style="justify-content:space-between;">
-          <div>
-            <div class="h1" style="margin-bottom:6px;">Lobby</div>
-            <div class="small"><b>Jij:</b> ${escapeHtml(state.name)}</div>
-          </div>
-          <div class="pill">Ready <b>${state.lobby.votes}</b> / ${state.lobby.required}</div>
+  shell(
+    "Lobby",
+    `
+      <button class="iconBtn" id="playersBtn" aria-label="Spelers">👥</button>
+      <span class="chip">Ready ${escapeHtml(readyTxt)}</span>
+    `,
+    `
+      <section class="panel">
+        <div class="rowBetween">
+          <div class="titleBig">Lobby</div>
+          <div class="smallMuted">${escapeHtml(myName())}</div>
         </div>
 
-        <div class="h2">Spelers</div>
-        <ul class="list">
-          ${state.lobby.players.map(p => `
-            <li>
-              <span>${escapeHtml(p)}${p===state.lobby.host ? ` <span class="badge">maker</span>` : ""}</span>
-            </li>
-          `).join("")}
-        </ul>
-
-        <div class="notice">
-          Iedereen klikt <b>Ready</b>. Zodra genoeg mensen klaar zijn start het spel.
+        <div class="miniGrid">
+          <div class="miniCard">
+            <div class="miniLabel">Spelers</div>
+            <div class="miniValue">${players.length}</div>
+          </div>
+          <div class="miniCard">
+            <div class="miniLabel">Ready</div>
+            <div class="miniValue">${escapeHtml(readyTxt)}</div>
+          </div>
         </div>
 
         <div id="msg" class="msg"></div>
-      </div>
+      </section>
+    `,
+    `
+      <button class="btn btnPrimary" id="readyBtn" ${players.length < 2 ? "disabled" : ""}>
+        ${state.lobby.youVoted ? "Ready ✅" : "Ready"}
+      </button>
+      <button class="btn" id="backBtn">Terug</button>
+    `
+  );
 
-      <div class="stickybar">
-        <div class="inner">
-          <button class="btn btn-primary" id="start" ${state.lobby.players.length < 2 ? "disabled" : ""}>
-            ${state.lobby.youVoted ? "Ready ✅ (toggle)" : "Ready"}
-          </button>
-          <button class="btn" id="back">Terug</button>
-        </div>
-      </div>
-    `);
+  document.querySelector("#readyBtn").onclick = () => socket.emit("start:vote");
 
-    document.querySelector("#start").onclick = () => socket.emit("start:vote");
+  document.querySelector("#backBtn").onclick = () => {
+    // UI terug naar home (server “leave” doen we nu niet)
+    state.screen = "home";
+    state.roomCode = "";
+    state.lobby = { host: "", players: [], votes: 0, required: 0, youVoted: false };
+    state.game = null;
+    state.memoryGuesses = ["", "", "", ""];
+    render();
+  };
 
-    document.querySelector("#back").onclick = () => {
-      state.screen = "home";
-      state.roomCode = "";
-      state.lobby = { host: "", players: [], votes: 0, required: 0, youVoted: false };
-      state.game = null;
-      state.memoryGuesses = ["", "", "", ""];
-      render();
-    };
-
-    return;
-  }
-
-  if (!state.game) {
-    shell("Piramiden", "", `<div class="card"><div class="small">Wachten op game state...</div></div>`);
-    return;
-  }
-
-  if (state.screen === "memory") return renderMemory();
-  return renderGame();
+  document.querySelector("#playersBtn").onclick = () => {
+    openSheet(
+      "Spelers",
+      `
+        <ul class="list">
+          ${(players).map(p => `
+            <li class="listItem">
+              <span>${escapeHtml(p)}</span>
+              ${p === state.lobby.host ? `<span class="chip">maker</span>` : ``}
+            </li>
+          `).join("")}
+        </ul>
+      `
+    );
+  };
 }
 
+/* ---------- GAME ---------- */
 function renderGame() {
   const g = state.game;
-
-  const handHtml = (g.yourHand ?? []).map((c, i) => {
-    const shown = (g.phase === "review" || !g.handLocked) ? escapeHtml(c?.v ?? "") : "🂠";
-    return `<button class="cardbtn" disabled>${shown}<small>${i+1}</small></button>`;
-  }).join("");
-
-  // REVIEW
-  if (g.phase === "review") {
-    const endsAt = g.review?.endsAt ?? 0;
-    const secsLeft = Math.max(0, Math.ceil((endsAt - state.now) / 1000));
-    const yourReady = Boolean(g.review?.yourReady);
-    const readyCount = g.review?.readyCount ?? 0;
-    const total = g.review?.totalPlayers ?? g.players.length;
-
-    shell("Spel", `<span class="badge">Room ${escapeHtml(state.roomCode)}</span>`, `
-      <div class="card">
-        <div class="row" style="justify-content:space-between;">
-          <div>
-            <div class="h1" style="margin-bottom:6px;">Bekijk je kaarten</div>
-            <div class="small"><b>Jij:</b> ${escapeHtml(state.name)}</div>
-          </div>
-          <div class="pill">Start in <b>${secsLeft}s</b></div>
-        </div>
-
-        <div class="h2">Hand</div>
-        <div class="hand">${handHtml}</div>
-
-        <div class="notice">
-          Klaar: <b>${readyCount}</b> / ${total}. Iedereen moet bevestigen of de timer start automatisch.
-        </div>
-      </div>
-
-      <div class="stickybar">
-        <div class="inner">
-          <button class="btn btn-green" id="ready" ${yourReady ? "disabled" : ""}>
-            Ik heb mijn kaarten bekeken ✅
-          </button>
-          <button class="btn" id="noop" disabled>${yourReady ? "Klaar ✅" : "Nog niet klaar"}</button>
-        </div>
-      </div>
-    `);
-
-    document.querySelector("#ready").onclick = () => socket.emit("review:ready");
+  if (!g) {
+    shell("Spel", "", `<section class="panel"><div class="smallMuted">Wachten op game state…</div></section>`);
     return;
   }
 
-  // CLAIM/RESOLVE/DRINK
-  const targets = (g.players ?? []).filter(p => p !== state.name);
-  const targetOptions = targets.map(p => `<option value="${escapeAttr(p)}">${escapeHtml(p)}</option>`).join("");
+  const phase = g.phase ?? "";
+  const phaseLabel =
+    phase === "review" ? "Review" :
+    phase === "claim" ? "Claim" :
+    phase === "resolve" ? "Resolve" :
+    phase === "drink" ? "Drink" :
+    phase === "memory" ? "Memory" : phase;
 
-  const passEndsAt = g.round?.passEndsAt ?? 0;
-  const secsLeft = Math.max(0, Math.ceil((passEndsAt - state.now) / 1000));
-
-  const phase = g.phase;
-  const decision = g.round?.yourDecision ?? null;
-
-  const claimDisabled = phase !== "claim" || decision !== null || !g.current || targets.length === 0;
-
-  const claimsHtml = (g.round?.claims ?? []).length === 0
-    ? `<div class="small">Nog geen claims.</div>`
-    : g.round.claims.map((c, idx) => {
-        let actions = "";
-
-        if (phase === "resolve" && c.status === "pending_belief" && c.target === state.name) {
-          actions = `
-            <div class="row" style="margin-top:10px;">
-              <button class="btn btn-green" data-act="believe" data-i="${idx}">Geloof</button>
-              <button class="btn btn-danger" data-act="doubt" data-i="${idx}">Niet geloven</button>
-            </div>
-          `;
-        }
-
-        if (phase === "resolve" && c.status === "awaiting_proof" && c.claimer === state.name) {
-          const picks = new Set(c.proofPicks ?? []);
-          const pickBtns = [0,1,2,3].map(i => {
-            const mark = picks.has(i) ? "✅" : "🂠";
-            return `<button class="cardbtn" data-act="pick" data-i="${idx}" data-card="${i}">${mark}<small>${i+1}</small></button>`;
-          }).join("");
-
-          actions = `
-            <div class="notice"><b>Toon ${c.mult} kaart(en)</b>: klik slots hieronder.</div>
-            <div class="hand">${pickBtns}</div>
-          `;
-        }
-
-        const statusTxt =
-          c.status === "pending_belief" ? "wacht op geloof/niet geloof" :
-          c.status === "awaiting_proof" ? "bewijs nodig" :
-          "afgehandeld";
-
-        return `
-          <div class="card" style="margin:10px 0; padding:12px;">
-            <div><b>${escapeHtml(c.claimer)}</b> zegt “ik heb ’m” (x${c.mult}) → <b>${escapeHtml(c.target)}</b></div>
-            <div class="small" style="margin-top:6px;">Status: ${statusTxt}</div>
-            ${actions}
-          </div>
-        `;
-      }).join("");
-
-  const drinkTasks = g.round?.yourDrinkTasks ?? [];
-  const mustAck = drinkTasks.length > 0;
-  const yourAck = Boolean(g.round?.yourDrinkAck);
-
-  const drinkHtml = (phase !== "drink")
-    ? `<div class="small">Drinken komt na de afhandeling.</div>`
-    : (
-        mustAck
-          ? `
-            <ul class="list">
-              ${drinkTasks.map(t => `<li><span><b>${escapeHtml(t)}</b></span></li>`).join("")}
-            </ul>
-            <button class="btn btn-green" id="drinkAck" ${yourAck ? "disabled" : ""}>Gedronken ✅</button>
-            <div class="small" style="margin-top:8px;">Bevestig om verder te gaan.</div>
-          `
-          : `<div class="small"><b>Geen drank voor jou.</b> Wachten op anderen…</div>`
-      );
-
-  shell("Spel", `<span class="badge">Room ${escapeHtml(state.roomCode)}</span>`, `
-    <div class="card">
-      <div class="row" style="justify-content:space-between;">
-        <div>
-          <div class="h1" style="margin-bottom:6px;">Ronde</div>
-          <div class="small"><b>Jij:</b> ${escapeHtml(state.name)}</div>
-        </div>
-        <div class="pill">${g.current ? `Kaart <b>${escapeHtml(g.current.value)}</b>` : "Nog geen kaart"}</div>
-      </div>
-
-      <div class="h2">Hand</div>
-      <div class="hand">${handHtml}</div>
-      <div class="small">${g.handLocked ? "Hand is omgedraaid (geheugen!)." : "Hand is nog zichtbaar."}</div>
-
-      <div class="h2">Piramide</div>
-      <div class="notice">
-        ${g.current
-          ? `<b>Rij:</b> ${g.current.row} — <b>Basis:</b> ${escapeHtml(g.current.base)}`
-          : `Nog geen kaart omgedraaid.`}
-        <div class="small" style="margin-top:6px;">Omgedraaid: ${Math.max(0, g.revealedIndex + 1)} / ${g.pyramidTotal}</div>
-      </div>
-
-      <div class="h2">Claims</div>
-      ${claimsHtml}
-
-      <div class="h2">Drinken</div>
-      ${drinkHtml}
-    </div>
-
-    <div class="stickybar">
-      <div class="inner">
-        <button class="btn btn-primary" id="claimBtn" ${claimDisabled ? "disabled" : ""}>
-          Ik heb ’m
-        </button>
-        <button class="btn" id="passBtn" ${phase !== "claim" || decision !== null ? "disabled" : ""}>
-          Ik heb ’m niet
-        </button>
-      </div>
-      <div class="container" style="padding: 10px 14px 0;">
-        <div class="row">
-          <select id="mult" ${claimDisabled ? "disabled" : ""}>
-            <option value="1">x1</option>
-            <option value="2">x2</option>
-            <option value="3">x3</option>
-            <option value="4">x4</option>
-          </select>
-          <select id="target" ${claimDisabled ? "disabled" : ""}>
-            ${targetOptions}
-          </select>
-          <div class="pill">${phase === "claim" ? `Auto-pass in <b>${secsLeft}s</b>` : `Fase: <b>${escapeHtml(phase)}</b>`}</div>
-        </div>
-        <div class="small" style="margin-top:8px;">
-          Jouw keuze: ${decision ? `<b>${escapeHtml(decision)}</b>` : `<i>nog niet gekozen</i>`}
-        </div>
-      </div>
-    </div>
-  `);
-
-  const claimBtn = document.querySelector("#claimBtn");
-  if (claimBtn) {
-    claimBtn.onclick = () => {
-      const mult = parseInt(document.querySelector("#mult").value, 10);
-      const target = document.querySelector("#target").value;
-      socket.emit("game:claim", { mult, target });
-    };
+  // Timer chip (claim: autopass, review: start)
+  let timerChip = "";
+  if (phase === "review") {
+    const endsAt = g.review?.endsAt ?? 0;
+    const secs = Math.max(0, Math.ceil((endsAt - state.now) / 1000));
+    timerChip = `<span class="chip">Start ${secs}s</span>`;
+  } else if (phase === "claim") {
+    const endsAt = g.round?.passEndsAt ?? 0;
+    const secs = Math.max(0, Math.ceil((endsAt - state.now) / 1000));
+    timerChip = `<span class="chip">Auto ${secs}s</span>`;
   }
 
-  const passBtn = document.querySelector("#passBtn");
-  if (passBtn) passBtn.onclick = () => socket.emit("game:pass");
+  // Current card display
+  const cardValue = g.current?.value ? escapeHtml(g.current.value) : "—";
+  const row = g.current?.row ?? "";
+  const prog = `${Math.max(0, (g.revealedIndex ?? -1) + 1)} / ${g.pyramidTotal ?? "?"}`;
 
-  app.querySelectorAll("button[data-act]").forEach(btn => {
-    btn.onclick = () => {
-      const act = btn.dataset.act;
-      const i = parseInt(btn.dataset.i, 10);
+  // Hand display (compact)
+  const handLocked = Boolean(g.handLocked);
+  const yourHand = g.yourHand ?? [];
+  const handHtml = yourHand.map((c, i) => {
+    const shown = (phase === "review" || !handLocked) ? escapeHtml(c?.v ?? "") : "🂠";
+    return `<button class="cardBtn" disabled>${shown}<small>${i + 1}</small></button>`;
+  }).join("");
 
-      if (act === "believe") socket.emit("game:believe", { claimIndex: i, believe: true });
-      if (act === "doubt") socket.emit("game:believe", { claimIndex: i, believe: false });
+  // Actions needed (keep ONLY what user must do on main screen)
+  const actionsHtml = buildMustDoActions(g);
+
+  // Bottom buttons by phase
+  const bottomHtml = buildBottomBar(g);
+
+  shell(
+    "Spel",
+    `
+      <button class="iconBtn" id="detailsBtn" aria-label="Details">⋯</button>
+      <span class="chip">${escapeHtml(phaseLabel)}</span>
+      ${timerChip}
+    `,
+    `
+      <section class="panel tight">
+        <div class="bigRow">
+          <div class="bigCard">
+            <div class="bigLabel">Kaart</div>
+            <div class="bigValue">${cardValue}</div>
+          </div>
+
+          <div class="bigCard">
+            <div class="bigLabel">Rij</div>
+            <div class="bigValue">${escapeHtml(row)}</div>
+          </div>
+
+          <div class="bigCard">
+            <div class="bigLabel">Progress</div>
+            <div class="bigValue" style="font-size:18px;">${escapeHtml(prog)}</div>
+          </div>
+        </div>
+
+        <div class="handWrap">
+          ${handHtml}
+        </div>
+      </section>
+
+      ${actionsHtml}
+    `,
+    bottomHtml
+  );
+
+  // Details sheet
+  document.querySelector("#detailsBtn").onclick = () => {
+    openSheet("Details", buildDetailsSheet(g));
+  };
+
+  // Wire must-do actions
+  wireMustDoActions(g);
+
+  // Wire bottom bar
+  wireBottomActions(g);
+}
+
+/* --- Must-do block: ONLY what player must answer/do now --- */
+function buildMustDoActions(g) {
+  const phase = g.phase;
+  const round = g.round ?? {};
+  const me = myName();
+
+  // REVIEW: only ready button is in bottom bar -> no must-do here
+  if (phase === "review") return "";
+
+  // DRINK phase: if you must ack -> show small panel
+  if (phase === "drink") {
+    const tasks = round.yourDrinkTasks ?? [];
+    const youAck = Boolean(round.yourDrinkAck);
+
+    if (tasks.length === 0) {
+      return `<section class="panel tight"><div class="smallMuted">Wachten…</div></section>`;
+    }
+
+    return `
+      <section class="panel tight">
+        <div class="rowBetween">
+          <div class="titleMid">Drink</div>
+          <span class="chip">${tasks.length}</span>
+        </div>
+        <div class="smallMuted">${tasks.map(t => escapeHtml(t)).join(" · ")}</div>
+        <div class="spacer8"></div>
+        <button class="btn btnGreen" id="drinkAckBtn" ${youAck ? "disabled" : ""}>Gedronken ✅</button>
+      </section>
+    `;
+  }
+
+  // RESOLVE: show ONLY if you are involved (target must believe/doubt OR claimer must prove)
+  if (phase === "resolve") {
+    const claims = round.claims ?? [];
+    let htmlParts = [];
+
+    claims.forEach((c, idx) => {
+      // target decision
+      if (c.status === "pending_belief" && c.target === me) {
+        htmlParts.push(`
+          <section class="panel tight">
+            <div class="titleMid">Geloof?</div>
+            <div class="smallMuted">${escapeHtml(c.claimer)} → x${escapeHtml(c.mult)} op jou</div>
+            <div class="btnRow">
+              <button class="btn btnGreen" data-act="believe" data-idx="${idx}">Geloof</button>
+              <button class="btn btnDanger" data-act="doubt" data-idx="${idx}">Niet</button>
+            </div>
+          </section>
+        `);
+      }
+
+      // claimer proof picks
+      if (c.status === "awaiting_proof" && c.claimer === me) {
+        const picks = new Set(c.proofPicks ?? []);
+        const pickBtns = [0, 1, 2, 3].map(i => {
+          const mark = picks.has(i) ? "✅" : "🂠";
+          return `<button class="cardBtn" data-act="pick" data-idx="${idx}" data-card="${i}">${mark}<small>${i + 1}</small></button>`;
+        }).join("");
+
+        htmlParts.push(`
+          <section class="panel tight">
+            <div class="titleMid">Toon kaart(en)</div>
+            <div class="smallMuted">Kies ${escapeHtml(c.mult)} slot(s)</div>
+            <div class="handWrap">${pickBtns}</div>
+          </section>
+        `);
+      }
+    });
+
+    return htmlParts.join("");
+  }
+
+  // CLAIM: no must-do block needed (buttons in bottom)
+  return "";
+}
+
+function wireMustDoActions(g) {
+  const phase = g.phase;
+  const round = g.round ?? {};
+
+  if (phase === "drink") {
+    const btn = document.querySelector("#drinkAckBtn");
+    if (btn) btn.onclick = () => socket.emit("drink:ack");
+  }
+
+  // resolve actions (delegation)
+  app.querySelectorAll("[data-act]").forEach(el => {
+    el.onclick = () => {
+      const act = el.dataset.act;
+      const idx = parseInt(el.dataset.idx, 10);
+
+      if (act === "believe") socket.emit("game:believe", { claimIndex: idx, believe: true });
+      if (act === "doubt") socket.emit("game:believe", { claimIndex: idx, believe: false });
+
       if (act === "pick") {
-        const cardIdx = parseInt(btn.dataset.card, 10);
-        socket.emit("game:proofPick", { claimIndex: i, cardIndex: cardIdx });
+        const cardIndex = parseInt(el.dataset.card, 10);
+        socket.emit("game:proofPick", { claimIndex: idx, cardIndex });
       }
     };
   });
-
-  const drinkAck = document.querySelector("#drinkAck");
-  if (drinkAck) drinkAck.onclick = () => socket.emit("drink:ack");
 }
 
-function renderMemory() {
-  const g = state.game;
+/* --- Bottom bar per phase --- */
+function buildBottomBar(g) {
+  const phase = g.phase;
+  const round = g.round ?? {};
+  const me = myName();
 
-  shell("Eindtest", `<span class="badge">Room ${escapeHtml(state.roomCode)}</span>`, `
-    <div class="card">
-      <div class="h1">Eindtest</div>
-      <div class="small"><b>Jij:</b> ${escapeHtml(state.name)}</div>
+  if (phase === "review") {
+    const yourReady = Boolean(g.review?.yourReady);
+    return `
+      <button class="btn btnGreen" id="reviewReadyBtn" ${yourReady ? "disabled" : ""}>
+        Klaar ✅
+      </button>
+      <button class="btn" id="detailsBottomBtn">Details</button>
+    `;
+  }
 
-      <div class="h2">Raad je 4 kaarten (per slot)</div>
+  if (phase === "claim") {
+    const players = (g.players ?? []).filter(p => p !== me);
+    const decision = round.yourDecision ?? null;
+    const disabled = decision !== null || !g.current || players.length === 0;
 
-      <div class="stack">
-        ${state.memoryGuesses.map((val, i) => `
-          <div class="row">
-            <div class="pill" style="min-width:92px;">Slot <b>${i+1}</b></div>
-            <input class="input" data-gi="${i}" value="${escapeAttr(val)}" placeholder="bv. 7 / K / A / 10" ${g.memory?.yourSubmitted ? "disabled" : ""} />
-          </div>
+    const targetOptions = players.map(p => `<option value="${escapeAttr(p)}">${escapeHtml(p)}</option>`).join("");
+
+    return `
+      <select class="selectSmall" id="mult" ${disabled ? "disabled" : ""}>
+        <option value="1">x1</option>
+        <option value="2">x2</option>
+        <option value="3">x3</option>
+        <option value="4">x4</option>
+      </select>
+
+      <select class="selectSmall" id="target" ${disabled ? "disabled" : ""}>
+        ${targetOptions}
+      </select>
+
+      <button class="btn btnPrimary" id="claimBtn" ${disabled ? "disabled" : ""}>Ik heb ’m</button>
+      <button class="btn" id="passBtn" ${decision !== null ? "disabled" : ""}>Niet</button>
+    `;
+  }
+
+  if (phase === "resolve") {
+    return `
+      <button class="btn" id="detailsBottomBtn">Details</button>
+      <button class="btn" id="noopBtn" disabled>Bezig…</button>
+    `;
+  }
+
+  if (phase === "drink") {
+    return `
+      <button class="btn" id="detailsBottomBtn">Details</button>
+      <button class="btn" id="noopBtn" disabled>Wachten…</button>
+    `;
+  }
+
+  return `
+    <button class="btn" id="detailsBottomBtn">Details</button>
+  `;
+}
+
+function wireBottomActions(g) {
+  const phase = g.phase;
+  const round = g.round ?? {};
+  const me = myName();
+
+  const detailsBottom = document.querySelector("#detailsBottomBtn");
+  if (detailsBottom) detailsBottom.onclick = () => openSheet("Details", buildDetailsSheet(g));
+
+  if (phase === "review") {
+    const btn = document.querySelector("#reviewReadyBtn");
+    if (btn) btn.onclick = () => socket.emit("review:ready");
+  }
+
+  if (phase === "claim") {
+    const claimBtn = document.querySelector("#claimBtn");
+    if (claimBtn) {
+      claimBtn.onclick = () => {
+        const mult = parseInt(document.querySelector("#mult").value, 10);
+        const target = document.querySelector("#target").value;
+        socket.emit("game:claim", { mult, target });
+      };
+    }
+
+    const passBtn = document.querySelector("#passBtn");
+    if (passBtn) passBtn.onclick = () => socket.emit("game:pass");
+  }
+}
+
+/* --- Details Sheet --- */
+function buildDetailsSheet(g) {
+  const phase = g.phase ?? "";
+  const round = g.round ?? {};
+  const me = myName();
+
+  const players = g.players ?? [];
+  const claims = round.claims ?? [];
+
+  const playersHtml = `
+    <div class="sheetSection">
+      <div class="sheetSectionTitle">Spelers</div>
+      <ul class="list">
+        ${players.map(p => `
+          <li class="listItem">
+            <span>${escapeHtml(p)}${p === me ? " (jij)" : ""}</span>
+          </li>
         `).join("")}
+      </ul>
+    </div>
+  `;
 
-        <button class="btn btn-primary" id="submit" ${g.memory?.yourSubmitted ? "disabled" : ""}>Indienen</button>
+  const claimsHtml = `
+    <div class="sheetSection">
+      <div class="sheetSectionTitle">Claims</div>
+      ${claims.length === 0 ? `<div class="smallMuted">Geen.</div>` : `
+        <ul class="list">
+          ${claims.map(c => {
+            const status =
+              c.status === "pending_belief" ? "geloof?" :
+              c.status === "awaiting_proof" ? "bewijs" :
+              "ok";
 
-        <div class="notice">
-          Voortgang: <b>${g.memory?.submittedCount ?? 0}</b> / ${g.memory?.totalPlayers ?? 0} ingediend
-        </div>
+            return `
+              <li class="listItem">
+                <span>${escapeHtml(c.claimer)} → ${escapeHtml(c.target)} (x${escapeHtml(c.mult)})</span>
+                <span class="chip">${escapeHtml(status)}</span>
+              </li>
+            `;
+          }).join("")}
+        </ul>
+      `}
+    </div>
+  `;
+
+  const infoHtml = `
+    <div class="sheetSection">
+      <div class="sheetSectionTitle">Piramide</div>
+      <div class="smallMuted">
+        Omgedraaid: <b>${escapeHtml(String(Math.max(0, (g.revealedIndex ?? -1) + 1)))}</b> / ${escapeHtml(String(g.pyramidTotal ?? "?"))}
+        ${g.current?.row ? ` · Rij <b>${escapeHtml(String(g.current.row))}</b>` : ""}
       </div>
     </div>
-  `);
+  `;
+
+  return `${playersHtml}${claimsHtml}${infoHtml}`;
+}
+
+/* ---------- MEMORY ---------- */
+function renderMemory() {
+  const g = state.game ?? {};
+  const yourSubmitted = Boolean(g.memory?.yourSubmitted);
+  const submittedCount = g.memory?.submittedCount ?? 0;
+  const total = g.memory?.totalPlayers ?? 0;
+
+  shell(
+    "Eindtest",
+    `<span class="chip">${escapeHtml(String(submittedCount))}/${escapeHtml(String(total))}</span>`,
+    `
+      <section class="panel">
+        <div class="titleBig">Eindtest</div>
+
+        <div class="grid2">
+          ${state.memoryGuesses.map((val, i) => `
+            <input class="input" data-gi="${i}" value="${escapeAttr(val)}" placeholder="Slot ${i+1}" ${yourSubmitted ? "disabled" : ""} />
+          `).join("")}
+        </div>
+
+        <div class="spacer8"></div>
+        <button class="btn btnPrimary" id="submitMem" ${yourSubmitted ? "disabled" : ""}>Indienen</button>
+      </section>
+    `,
+    `<button class="btn" id="detailsBottomBtn">Details</button>`
+  );
 
   app.querySelectorAll("input[data-gi]").forEach(inp => {
     inp.oninput = () => {
@@ -401,23 +595,26 @@ function renderMemory() {
     };
   });
 
-  document.querySelector("#submit").onclick = () => {
+  document.querySelector("#submitMem").onclick = () => {
     socket.emit("memory:submit", { guesses: state.memoryGuesses });
+  };
+
+  document.querySelector("#detailsBottomBtn").onclick = () => {
+    openSheet("Info", `<div class="smallMuted">Wachten op de rest…</div>`);
   };
 }
 
-/* socket events */
+/* ---------- Socket events ---------- */
 function applyLobbyStatus(status) {
   state.lobby.host = status.host;
   state.lobby.players = status.players;
   state.lobby.votes = status.votes;
   state.lobby.required = status.required;
-  state.lobby.youVoted = (status.voters ?? []).includes(state.name.trim());
+  state.lobby.youVoted = (status.voters ?? []).includes(myName());
 }
 
 socket.on("room:status", (status) => {
   applyLobbyStatus(status);
-  if (state.screen === "lobby") render();
 });
 
 socket.on("game:state", (gameState) => {
@@ -431,7 +628,12 @@ socket.on("game:state", (gameState) => {
   render();
 });
 
-/* utils */
+/* ---------- utils ---------- */
+function showMsg(text) {
+  const el = document.querySelector("#msg");
+  if (el) el.textContent = text;
+}
+
 function escapeHtml(s) {
   return String(s ?? "")
     .replaceAll("&", "&amp;")
