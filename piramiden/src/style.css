@@ -264,15 +264,115 @@ a{ color:inherit; }
   gap:8px;
   flex-wrap:wrap;
 }
+/* ===== Speelkaarten look ===== */
 .cardBtn{
   width: 64px;
-  height: 72px;
-  border-radius: 16px;
-  border: 1px solid var(--line);
-  background: rgba(255,255,255,.05);
+  height: 84px;                 /* iets hoger = meer “kaart” */
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.18);
+  background:
+    radial-gradient(140px 90px at 30% 20%, rgba(255,255,255,.25), transparent 55%),
+    linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.03));
+  box-shadow: 0 10px 22px rgba(0,0,0,.35);
   color: var(--text);
   font-weight: 950;
+  position: relative;
+  overflow: hidden;
 }
+
+.cardBtn small{
+  position: absolute;
+  left: 8px;
+  bottom: 6px;
+  font-size: 11px;
+  color: rgba(233,238,252,.65);
+  font-weight: 800;
+}
+
+/* “omgedraaid” kaart (🂠) ziet er chiquer uit */
+.cardBtn:has(:not(*)) { } /* (noop, zodat CSS valid blijft) */
+
+.cardBtn::before{
+  content:"";
+  position:absolute;
+  inset: 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,.10);
+  pointer-events:none;
+}
+
+/* Als er 🂠 staat, geven we een patroon (werkt omdat je tekst exact 🂠 is) */
+.cardBtn{
+  -webkit-tap-highlight-color: transparent;
+}
+.cardBtn[disabled]{
+  opacity: 1; /* disabled maar wel helder */
+}
+
+/* ===== Mini-piramide ===== */
+.pyramidMini{
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255,255,255,.03);
+  padding: 10px;
+  overflow: hidden;
+}
+
+.pTitle{
+  font-size: 12px;
+  font-weight: 950;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .2px;
+  margin-bottom: 8px;
+}
+
+.pGrid{
+  display: grid;
+  gap: 6px;
+}
+
+.pRow{
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+
+.pCard{
+  width: 24px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.05);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size: 12px;
+  font-weight: 950;
+  color: rgba(233,238,252,.65);
+}
+
+.pCard.done{
+  background: rgba(39,211,162,.12);
+  border-color: rgba(39,211,162,.30);
+  color: rgba(233,238,252,.9);
+}
+
+.pCard.now{
+  background: rgba(124,92,255,.18);
+  border-color: rgba(124,92,255,.55);
+  color: rgba(233,238,252,1);
+  box-shadow: 0 0 0 4px rgba(124,92,255,.15);
+}
+
+/* Extra compact op kleine gsm’s */
+@media (max-width: 380px){
+  .cardBtn{ width: 60px; height: 80px; }
+  .pCard{ width: 22px; height: 28px; }
+  .pRow{ gap: 5px; }
+}
+
 .cardBtn small{
   display:block;
   margin-top: 6px;

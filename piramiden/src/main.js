@@ -332,6 +332,10 @@ function renderGame() {
             <div class="bigValue">${cardValue}</div>
           </div>
 
+          <div class="pyramidMini">
+            ${buildPyramidMini(g)}
+          </div>
+
           <div class="bigCard">
             <div class="bigLabel">Rij</div>
             <div class="bigValue">${escapeHtml(row)}</div>
@@ -600,6 +604,44 @@ function buildDetailsSheet(g) {
   `;
 
   return `${playersHtml}${claimsHtml}${infoHtml}`;
+}
+
+function buildPyramidMini(g) {
+  const total = Number(g.pyramidTotal ?? 0);
+  if (!total) return `<div class="pTitle">Piramide</div><div class="pHint smallMuted">—</div>`;
+
+  // bepaal aantal rijen uit total (n(n+1)/2)
+  let rows = Math.floor((Math.sqrt(8 * total + 1) - 1) / 2);
+  if (rows * (rows + 1) / 2 !== total) {
+    // fallback als total geen perfecte driehoek is
+    rows = 1;
+    let sum = 0;
+    while (sum + (rows + 1) <= total) {
+      rows++;
+      sum = (rows * (rows + 1)) / 2;
+    }
+  }
+
+  const currentIndex = Number(g.revealedIndex ?? -1);
+  const currentVal = g.current?.value ? escapeHtml(g.current.value) : "";
+
+  let idx = 0;
+  let html = `<div class="pTitle">Piramide</div><div class="pGrid">`;
+
+  for (let r = 1; r <= rows; r++) {
+    html += `<div class="pRow">`;
+    for (let c = 0; c < r && idx < total; c++, idx++) {
+      const isDone = idx < currentIndex;
+      const isNow = idx === currentIndex;
+      const cls = `pCard ${isDone ? "done" : ""} ${isNow ? "now" : ""}`;
+      const content = isNow ? (currentVal || "✓") : (isDone ? "✓" : "•");
+      html += `<div class="${cls}" aria-label="kaart ${idx + 1}">${content}</div>`;
+    }
+    html += `</div>`;
+  }
+
+  html += `</div>`;
+  return html;
 }
 
 /* ---------- MEMORY ---------- */
