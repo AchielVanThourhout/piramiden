@@ -94,11 +94,9 @@ function render() {
 }
 
 function updateLiveTimers() {
-  // update enkel wat tekstjes, nooit de hele DOM vervangen
   const g = state.game;
   if (!g) return;
 
-  // header timer chip
   const chip = document.querySelector("#timerChip");
   if (!chip) return;
 
@@ -139,16 +137,25 @@ function renderHome() {
 
   document.querySelector("#name").oninput = (e) => { state.name = e.target.value; };
 
+  // ✅ STRUCTURELE FIX: na create altijd joinen
   document.querySelector("#create").onclick = () => {
     const name = myName();
     if (!name) return showMsg("Vul je naam in.");
 
-    socket.emit("room:create", { name }, (res) => {
-      if (!res?.ok) return showMsg(res?.error ?? "Create mislukt.");
-      state.roomCode = res.code;
-      applyLobbyStatus(res.status);
-      state.screen = "lobby";
-      render();
+    socket.emit("room:create", { name }, (resCreate) => {
+      if (!resCreate?.ok) return showMsg(resCreate?.error ?? "Create mislukt.");
+
+      const code = String(resCreate.code || "").toUpperCase();
+      if (!code) return showMsg("Create gaf geen room code terug.");
+
+      socket.emit("room:join", { code, name }, (resJoin) => {
+        if (!resJoin?.ok) return showMsg(resJoin?.error ?? "Join na create mislukt.");
+
+        state.roomCode = resJoin.code ?? code;
+        applyLobbyStatus(resJoin.status);
+        state.screen = "lobby";
+        render();
+      });
     });
   };
 
@@ -208,10 +215,11 @@ function renderLobby() {
     `
   );
 
-  document.querySelector("#readyBtn").onclick = () => socket.emit("start:vote");
+  const readyBtn = document.querySelector("#readyBtn");
+  if (readyBtn) readyBtn.onclick = () => socket.emit("start:vote");
 
-  document.querySelector("#backBtn").onclick = () => {
-    // UI terug naar home (server “leave” doen we nu niet)
+  const backBtn = document.querySelector("#backBtn");
+  if (backBtn) backBtn.onclick = () => {
     state.screen = "home";
     state.roomCode = "";
     state.lobby = { host: "", players: [], votes: 0, required: 0, youVoted: false };
@@ -220,12 +228,13 @@ function renderLobby() {
     render();
   };
 
-  document.querySelector("#playersBtn").onclick = () => {
+  const playersBtn = document.querySelector("#playersBtn");
+  if (playersBtn) playersBtn.onclick = () => {
     openSheet(
       "Spelers",
       `
         <ul class="list">
-          ${(players).map(p => `
+          ${players.map(p => `
             <li class="listItem">
               <span>${escapeHtml(p)}</span>
               ${p === state.lobby.host ? `<span class="chip">maker</span>` : ``}
@@ -253,24 +262,17 @@ function renderGame() {
     phase === "drink" ? "Drink" :
     phase === "memory" ? "Memory" : phase;
 
-  // Timer chip (claim: autopass, review: start)
   let timerChip = "";
   if (phase === "review") {
-    const endsAt = g.review?.endsAt ?? 0;
-    const secs = Math.max(0, Math.ceil((endsAt - state.now) / 1000));
-    timerChip = `<span class="chip" id="timerChip">Start 90s</span>`;
+    timerChip = `<span class="chip" id="timerChip">Start</span>`;
   } else if (phase === "claim") {
-    const endsAt = g.round?.passEndsAt ?? 0;
-    const secs = Math.max(0, Math.ceil((endsAt - state.now) / 1000));
-    timerChip = `<span class="chip" id="timerChip">Auto 30s</span>`;
+    timerChip = `<span class="chip" id="timerChip">Auto</span>`;
   }
 
-  // Current card display
   const cardValue = g.current?.value ? escapeHtml(g.current.value) : "—";
   const row = g.current?.row ?? "";
   const prog = `${Math.max(0, (g.revealedIndex ?? -1) + 1)} / ${g.pyramidTotal ?? "?"}`;
 
-  // Hand display (compact)
   const handLocked = Boolean(g.handLocked);
   const yourHand = g.yourHand ?? [];
   const handHtml = yourHand.map((c, i) => {
@@ -278,10 +280,7 @@ function renderGame() {
     return `<button class="cardBtn" disabled>${shown}<small>${i + 1}</small></button>`;
   }).join("");
 
-  // Actions needed (keep ONLY what user must do on main screen)
   const actionsHtml = buildMustDoActions(g);
-
-  // Bottom buttons by phase
   const bottomHtml = buildBottomBar(g);
 
   shell(
@@ -320,28 +319,21 @@ function renderGame() {
     bottomHtml
   );
 
-  // Details sheet
-  document.querySelector("#detailsBtn").onclick = () => {
-    openSheet("Details", buildDetailsSheet(g));
-  };
+  const detailsBtn = document.querySelector("#detailsBtn");
+  if (detailsBtn) detailsBtn.onclick = () => openSheet("Details", buildDetailsSheet(g));
 
-  // Wire must-do actions
   wireMustDoActions(g);
-
-  // Wire bottom bar
   wireBottomActions(g);
 }
 
-/* --- Must-do block: ONLY what player must answer/do now --- */
+/* --- Must-do block --- */
 function buildMustDoActions(g) {
   const phase = g.phase;
   const round = g.round ?? {};
   const me = myName();
 
-  // REVIEW: only ready button is in bottom bar -> no must-do here
   if (phase === "review") return "";
 
-  // DRINK phase: if you must ack -> show small panel
   if (phase === "drink") {
     const tasks = round.yourDrinkTasks ?? [];
     const youAck = Boolean(round.yourDrinkAck);
@@ -363,13 +355,11 @@ function buildMustDoActions(g) {
     `;
   }
 
-  // RESOLVE: show ONLY if you are involved (target must believe/doubt OR claimer must prove)
   if (phase === "resolve") {
     const claims = round.claims ?? [];
     let htmlParts = [];
 
     claims.forEach((c, idx) => {
-      // target decision
       if (c.status === "pending_belief" && c.target === me) {
         htmlParts.push(`
           <section class="panel tight">
@@ -383,7 +373,6 @@ function buildMustDoActions(g) {
         `);
       }
 
-      // claimer proof picks
       if (c.status === "awaiting_proof" && c.claimer === me) {
         const picks = new Set(c.proofPicks ?? []);
         const pickBtns = [0, 1, 2, 3].map(i => {
@@ -404,20 +393,17 @@ function buildMustDoActions(g) {
     return htmlParts.join("");
   }
 
-  // CLAIM: no must-do block needed (buttons in bottom)
   return "";
 }
 
 function wireMustDoActions(g) {
   const phase = g.phase;
-  const round = g.round ?? {};
 
   if (phase === "drink") {
     const btn = document.querySelector("#drinkAckBtn");
     if (btn) btn.onclick = () => socket.emit("drink:ack");
   }
 
-  // resolve actions (delegation)
   app.querySelectorAll("[data-act]").forEach(el => {
     el.onclick = () => {
       const act = el.dataset.act;
@@ -434,7 +420,7 @@ function wireMustDoActions(g) {
   });
 }
 
-/* --- Bottom bar per phase --- */
+/* --- Bottom bar --- */
 function buildBottomBar(g) {
   const phase = g.phase;
   const round = g.round ?? {};
@@ -443,9 +429,7 @@ function buildBottomBar(g) {
   if (phase === "review") {
     const yourReady = Boolean(g.review?.yourReady);
     return `
-      <button class="btn btnGreen" id="reviewReadyBtn" ${yourReady ? "disabled" : ""}>
-        Klaar ✅
-      </button>
+      <button class="btn btnGreen" id="reviewReadyBtn" ${yourReady ? "disabled" : ""}>Klaar ✅</button>
       <button class="btn" id="detailsBottomBtn">Details</button>
     `;
   }
@@ -488,15 +472,11 @@ function buildBottomBar(g) {
     `;
   }
 
-  return `
-    <button class="btn" id="detailsBottomBtn">Details</button>
-  `;
+  return `<button class="btn" id="detailsBottomBtn">Details</button>`;
 }
 
 function wireBottomActions(g) {
   const phase = g.phase;
-  const round = g.round ?? {};
-  const me = myName();
 
   const detailsBottom = document.querySelector("#detailsBottomBtn");
   if (detailsBottom) detailsBottom.onclick = () => openSheet("Details", buildDetailsSheet(g));
@@ -523,7 +503,6 @@ function wireBottomActions(g) {
 
 /* --- Details Sheet --- */
 function buildDetailsSheet(g) {
-  const phase = g.phase ?? "";
   const round = g.round ?? {};
   const me = myName();
 
@@ -613,13 +592,11 @@ function renderMemory() {
     };
   });
 
-  document.querySelector("#submitMem").onclick = () => {
-    socket.emit("memory:submit", { guesses: state.memoryGuesses });
-  };
+  const submit = document.querySelector("#submitMem");
+  if (submit) submit.onclick = () => socket.emit("memory:submit", { guesses: state.memoryGuesses });
 
-  document.querySelector("#detailsBottomBtn").onclick = () => {
-    openSheet("Info", `<div class="smallMuted">Wachten op de rest…</div>`);
-  };
+  const det = document.querySelector("#detailsBottomBtn");
+  if (det) det.onclick = () => openSheet("Info", `<div class="smallMuted">Wachten op de rest…</div>`);
 }
 
 /* ---------- Socket events ---------- */
@@ -631,8 +608,10 @@ function applyLobbyStatus(status) {
   state.lobby.youVoted = (status.voters ?? []).includes(myName());
 }
 
+// ✅ STRUCTURELE FIX: render bij status updates wanneer je in lobby zit
 socket.on("room:status", (status) => {
   applyLobbyStatus(status);
+  if (state.screen === "lobby") render();
 });
 
 socket.on("game:state", (gameState) => {

@@ -294,6 +294,7 @@ a{ color:inherit; }
   background: rgba(7,10,20,.76);
   backdrop-filter: blur(10px);
   border-top: 1px solid var(--line);
+  z-index: 1000;
 }
 .bottom{
   display:flex;
