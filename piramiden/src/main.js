@@ -328,33 +328,36 @@ function renderGame() {
       ${timerChip}
     `,
     `
-      <div class="gameLayout">
-        <section class="panel tight">
-          <div class="bigRow">
-            <div class="bigCard">
-              <div class="bigLabel">Kaart</div>
-              <div class="bigValue">${cardValue}</div>
-            </div>
+  <div class="gameLayout">
+    <section class="panel tight">
+      <div class="bigRow">
+        <div class="bigCard">
+          <div class="bigLabel">Kaart</div>
+          <div class="bigValue">${cardValue}</div>
+        </div>
 
-            <div class="bigCard">
-              <div class="bigLabel">Rij</div>
-              <div class="bigValue">${escapeHtml(row)}</div>
-            </div>
+        <div class="bigCard">
+          <div class="bigLabel">Rij</div>
+          <div class="bigValue">${escapeHtml(row)}</div>
+        </div>
 
-            <div class="bigCard">
-              <div class="bigLabel">Progress</div>
-              <div class="bigValue" style="font-size:18px;">${escapeHtml(prog)}</div>
-            </div>
-          </div>
-
-          <div class="handWrap">${handHtml}</div>
-        </section>
-
-        ${actionsHtml || `<div></div>`}
-
-        ${pyramidHtml}
+        <div class="bigCard">
+          <div class="bigLabel">Progress</div>
+          <div class="bigValue" style="font-size:18px;">${escapeHtml(prog)}</div>
+        </div>
       </div>
-    `,
+
+      <div class="handWrap">${handHtml}</div>
+    </section>
+
+    <div class="pyramidMini">
+      ${buildPyramidMini(g)}
+    </div>
+
+    ${actionsHtml}
+  </div>
+`
+,
     bottomHtml
   );
 
@@ -610,44 +613,100 @@ function buildDetailsSheet(g) {
 }
 
 /* ---------- Piramide Mini (correcte richting + groen) ---------- */
+function getPyramidValueAt(g, i) {
+  // We proberen een paar mogelijke velden die je server kan meesturen.
+  const pools = [
+    g.pyramidValues,
+    g.revealedValues,
+    g.revealedCards,
+    g.pyramidCards,
+    g.pyramid,
+    g.revealed,
+  ];
+
+  for (const arr of pools) {
+    if (!Array.isArray(arr)) continue;
+    const item = arr[i];
+    if (item == null) continue;
+
+    if (typeof item === "string" || typeof item === "number") return String(item);
+
+    if (typeof item === "object") {
+      const v =
+        item.value ??
+        item.v ??
+        item.card?.value ??
+        item.card?.v ??
+        item.val ??
+        item.number;
+      if (v != null) return String(v);
+    }
+  }
+
+  return "";
+}
+
 function buildPyramidMini(g) {
   const total = Number(g.pyramidTotal ?? 0);
-  if (!total) return `<div class="smallMuted">—</div>`;
+  if (!total) return `<div class="pyramidWrap"></div>`;
 
-  // bepaal aantal rijen (triangular)
+  // aantal rijen bepalen (driehoeksgetal)
   let rows = Math.floor((Math.sqrt(8 * total + 1) - 1) / 2);
-  if (rows * (rows + 1) / 2 !== total) {
+  if ((rows * (rows + 1)) / 2 !== total) {
     rows = 1;
-    while ((rows * (rows + 1)) / 2 < total) rows++;
-  }
-
-  // revealedIndex = index van huidige kaart (0-based), dus omgedraaid = revealedIndex + 1
-  const revealedCount = Math.max(0, Number(g.revealedIndex ?? -1) + 1);
-  const currentPos = revealedCount; // 1-based positie van huidige kaart als die bestaat
-
-  // bouw van onder -> boven: len = rows ... 1
-  let pos = 1;
-  const rowHtml = [];
-
-  for (let len = rows; len >= 1; len--) {
-    const cells = [];
-    for (let c = 0; c < len && pos <= total; c++) {
-      const isRevealed = pos <= revealedCount;
-      const isCurrent = Boolean(g.current) && pos === currentPos;
-
-      cells.push(`
-        <div class="pCell ${isRevealed ? "revealed" : ""} ${isCurrent ? "current" : ""}" aria-label="kaart ${pos}">
-          ${pos}
-        </div>
-      `);
-
-      pos++;
+    let sum = 0;
+    while (sum + (rows + 1) <= total) {
+      rows++;
+      sum = (rows * (rows + 1)) / 2;
     }
-    rowHtml.push(`<div class="pRow">${cells.join("")}</div>`);
   }
 
-  return `<div class="pyramidWrap">${rowHtml.join("")}</div>`;
+  // mapping: index 0 = links onderaan, dan links->rechts, rij per rij naar boven
+  // we renderen VISUEEL top->bottom (punt omhoog), maar indices blijven bottom-up correct.
+  const blocks = {};
+  let run = 0;
+  for (let len = rows; len >= 1; len--) {
+    blocks[len] = { start: run, end: run + len - 1 };
+    run += len;
+  }
+
+  const currentIndex = Number(g.revealedIndex ?? -1);
+  const currentValRaw = g.current?.value ?? "";
+  const currentVal = currentValRaw !== "" ? escapeHtml(String(currentValRaw)) : "";
+
+  let html = `<div class="pyramidWrap">`;
+
+  for (let r = 1; r <= rows; r++) {
+    const b = blocks[r];
+    html += `<div class="pRow">`;
+
+    for (let idx = b.start; idx <= b.end && idx < total; idx++) {
+      const isRevealed = idx < currentIndex;
+      const isCurrent = idx === currentIndex;
+
+      let val = "";
+      if (isCurrent) {
+        val = currentVal;
+      } else if (isRevealed) {
+        const found = getPyramidValueAt(g, idx);
+        val = found ? escapeHtml(found) : "";
+      }
+
+      const cls = `pCell${isRevealed ? " revealed" : ""}${isCurrent ? " current" : ""}`;
+
+      // Onomgedraaid = leeg, Omgedraaid = waarde (als beschikbaar)
+      const content = val ? val : "&nbsp;";
+
+      html += `<div class="${cls}" aria-label="piramide ${idx + 1}">${content}</div>`;
+    }
+
+    html += `</div>`;
+  }
+
+  html += `</div>`;
+  return html;
 }
+
 
 /* ---------- MEMORY ---------- */
 function renderMemory() {
