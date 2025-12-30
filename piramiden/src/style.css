@@ -33,6 +33,9 @@ body{
 button, input, select{ font: inherit; }
 a{ color:inherit; }
 
+* { -webkit-tap-highlight-color: transparent; }
+button, .btn, select { touch-action: manipulation; }
+
 /* App layout */
 .app{
   height: 100vh;
@@ -257,6 +260,13 @@ a{ color:inherit; }
   letter-spacing: .2px;
 }
 
+/* ====== NEW: game layout wrapper (voor losse piramide) ====== */
+.gameLayout{
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
 /* Hand (compact, always fits) */
 .handWrap{
   margin-top: 10px;
@@ -264,10 +274,11 @@ a{ color:inherit; }
   gap:8px;
   flex-wrap:wrap;
 }
+
 /* ===== Speelkaarten look ===== */
 .cardBtn{
   width: 64px;
-  height: 84px;                 /* iets hoger = meer “kaart” */
+  height: 84px;
   border-radius: 14px;
   border: 1px solid rgba(255,255,255,.18);
   background:
@@ -278,6 +289,17 @@ a{ color:inherit; }
   font-weight: 950;
   position: relative;
   overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+.cardBtn[disabled]{ opacity: 1; }
+
+.cardBtn::before{
+  content:"";
+  position:absolute;
+  inset: 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,.10);
+  pointer-events:none;
 }
 
 .cardBtn small{
@@ -289,101 +311,68 @@ a{ color:inherit; }
   font-weight: 800;
 }
 
-/* “omgedraaid” kaart (🂠) ziet er chiquer uit */
-.cardBtn:has(:not(*)) { } /* (noop, zodat CSS valid blijft) */
+/* Button row inside panels */
+.btnRow{ display:flex; gap:10px; margin-top: 10px; }
+.btnRow .btn{ flex:1; }
 
-.cardBtn::before{
-  content:"";
-  position:absolute;
-  inset: 6px;
-  border-radius: 10px;
-  border: 1px solid rgba(255,255,255,.10);
-  pointer-events:none;
-}
-
-/* Als er 🂠 staat, geven we een patroon (werkt omdat je tekst exact 🂠 is) */
-.cardBtn{
-  -webkit-tap-highlight-color: transparent;
-}
-.cardBtn[disabled]{
-  opacity: 1; /* disabled maar wel helder */
-}
-
-/* ===== Mini-piramide ===== */
+/* ====== NEW: Losse mini-piramide (geen panel-look) ====== */
 .pyramidMini{
-  margin-top: 10px;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: rgba(255,255,255,.03);
-  padding: 10px;
+  margin-top: 2px;
+  padding: 2px 0 6px;
   overflow: hidden;
 }
 
-.pTitle{
-  font-size: 12px;
-  font-weight: 950;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: .2px;
-  margin-bottom: 8px;
-}
-
-.pGrid{
+/* container rond de piramide */
+.pyramidWrap{
   display: grid;
   gap: 6px;
+  justify-content: center;
 }
 
+/* één rij */
 .pRow{
-  display: flex;
-  justify-content: center;
+  display:flex;
+  justify-content:center;
   gap: 6px;
 }
 
-.pCard{
-  width: 24px;
+/* één vakje */
+.pCell{
+  width: 26px;
   height: 30px;
-  border-radius: 8px;
+  border-radius: 10px;
   border: 1px solid rgba(255,255,255,.14);
-  background: rgba(255,255,255,.05);
+  background: rgba(255,255,255,.04);
   display:flex;
   align-items:center;
   justify-content:center;
   font-size: 12px;
   font-weight: 950;
-  color: rgba(233,238,252,.65);
+  color: rgba(233,238,252,.70);
+  box-shadow: 0 6px 14px rgba(0,0,0,.22);
 }
 
-.pCard.done{
-  background: rgba(39,211,162,.12);
-  border-color: rgba(39,211,162,.30);
-  color: rgba(233,238,252,.9);
+/* omgedraaid => groen, maar nummer blijft */
+.pCell.revealed{
+  background: rgba(39,211,162,.16);
+  border-color: rgba(39,211,162,.40);
+  color: rgba(233,238,252,.95);
 }
 
-.pCard.now{
-  background: rgba(124,92,255,.18);
-  border-color: rgba(124,92,255,.55);
+/* huidige kaart => accent rand */
+.pCell.current{
+  background: rgba(124,92,255,.14);
+  border-color: rgba(124,92,255,.65);
+  box-shadow: 0 0 0 4px rgba(124,92,255,.14), 0 10px 20px rgba(0,0,0,.25);
   color: rgba(233,238,252,1);
-  box-shadow: 0 0 0 4px rgba(124,92,255,.15);
 }
 
 /* Extra compact op kleine gsm’s */
 @media (max-width: 380px){
   .cardBtn{ width: 60px; height: 80px; }
-  .pCard{ width: 22px; height: 28px; }
+  .pCell{ width: 24px; height: 28px; border-radius: 9px; }
   .pRow{ gap: 5px; }
 }
-
-.cardBtn small{
-  display:block;
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--muted);
-  font-weight: 800;
-}
-
-/* Button row inside panels */
-.btnRow{ display:flex; gap:10px; margin-top: 10px; }
-.btnRow .btn{ flex:1; }
 
 /* Bottom fixed bar */
 .bottom{
@@ -487,6 +476,3 @@ a{ color:inherit; }
   justify-content:space-between;
   gap:10px;
 }
-
-* { -webkit-tap-highlight-color: transparent; }
-button, .btn, select { touch-action: manipulation; }

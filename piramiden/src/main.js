@@ -317,6 +317,9 @@ function renderGame() {
   const actionsHtml = buildMustDoActions(g);
   const bottomHtml = buildBottomBar(g);
 
+  // ✅ Piramide "los" en lager (tussen content en bottom bar)
+  const pyramidHtml = `<div class="pyramidMini">${buildPyramidMini(g)}</div>`;
+
   shell(
     "Spel",
     `
@@ -325,32 +328,32 @@ function renderGame() {
       ${timerChip}
     `,
     `
-      <section class="panel tight">
-        <div class="bigRow">
-          <div class="bigCard">
-            <div class="bigLabel">Kaart</div>
-            <div class="bigValue">${cardValue}</div>
+      <div class="gameLayout">
+        <section class="panel tight">
+          <div class="bigRow">
+            <div class="bigCard">
+              <div class="bigLabel">Kaart</div>
+              <div class="bigValue">${cardValue}</div>
+            </div>
+
+            <div class="bigCard">
+              <div class="bigLabel">Rij</div>
+              <div class="bigValue">${escapeHtml(row)}</div>
+            </div>
+
+            <div class="bigCard">
+              <div class="bigLabel">Progress</div>
+              <div class="bigValue" style="font-size:18px;">${escapeHtml(prog)}</div>
+            </div>
           </div>
 
-          <div class="bigCard">
-            <div class="bigLabel">Rij</div>
-            <div class="bigValue">${escapeHtml(row)}</div>
-          </div>
+          <div class="handWrap">${handHtml}</div>
+        </section>
 
-          <div class="bigCard">
-            <div class="bigLabel">Progress</div>
-            <div class="bigValue" style="font-size:18px;">${escapeHtml(prog)}</div>
-          </div>
-        </div>
+        ${actionsHtml || `<div></div>`}
 
-        <div class="pyramidMini">
-            ${buildPyramidMini(g)}
-        </div>
-
-        <div class="handWrap">${handHtml}</div>
-      </section>
-
-      ${actionsHtml}
+        ${pyramidHtml}
+      </div>
     `,
     bottomHtml
   );
@@ -606,42 +609,44 @@ function buildDetailsSheet(g) {
   return `${playersHtml}${claimsHtml}${infoHtml}`;
 }
 
+/* ---------- Piramide Mini (correcte richting + groen) ---------- */
 function buildPyramidMini(g) {
   const total = Number(g.pyramidTotal ?? 0);
-  if (!total) return `<div class="pTitle">Piramide</div><div class="pHint smallMuted">—</div>`;
+  if (!total) return `<div class="smallMuted">—</div>`;
 
-  // bepaal aantal rijen uit total (n(n+1)/2)
+  // bepaal aantal rijen (triangular)
   let rows = Math.floor((Math.sqrt(8 * total + 1) - 1) / 2);
   if (rows * (rows + 1) / 2 !== total) {
-    // fallback als total geen perfecte driehoek is
     rows = 1;
-    let sum = 0;
-    while (sum + (rows + 1) <= total) {
-      rows++;
-      sum = (rows * (rows + 1)) / 2;
-    }
+    while ((rows * (rows + 1)) / 2 < total) rows++;
   }
 
-  const currentIndex = Number(g.revealedIndex ?? -1);
-  const currentVal = g.current?.value ? escapeHtml(g.current.value) : "";
+  // revealedIndex = index van huidige kaart (0-based), dus omgedraaid = revealedIndex + 1
+  const revealedCount = Math.max(0, Number(g.revealedIndex ?? -1) + 1);
+  const currentPos = revealedCount; // 1-based positie van huidige kaart als die bestaat
 
-  let idx = 0;
-  let html = `<div class="pTitle">Piramide</div><div class="pGrid">`;
+  // bouw van onder -> boven: len = rows ... 1
+  let pos = 1;
+  const rowHtml = [];
 
-  for (let r = 1; r <= rows; r++) {
-    html += `<div class="pRow">`;
-    for (let c = 0; c < r && idx < total; c++, idx++) {
-      const isDone = idx < currentIndex;
-      const isNow = idx === currentIndex;
-      const cls = `pCard ${isDone ? "done" : ""} ${isNow ? "now" : ""}`;
-      const content = isNow ? (currentVal || "✓") : (isDone ? "✓" : "•");
-      html += `<div class="${cls}" aria-label="kaart ${idx + 1}">${content}</div>`;
+  for (let len = rows; len >= 1; len--) {
+    const cells = [];
+    for (let c = 0; c < len && pos <= total; c++) {
+      const isRevealed = pos <= revealedCount;
+      const isCurrent = Boolean(g.current) && pos === currentPos;
+
+      cells.push(`
+        <div class="pCell ${isRevealed ? "revealed" : ""} ${isCurrent ? "current" : ""}" aria-label="kaart ${pos}">
+          ${pos}
+        </div>
+      `);
+
+      pos++;
     }
-    html += `</div>`;
+    rowHtml.push(`<div class="pRow">${cells.join("")}</div>`);
   }
 
-  html += `</div>`;
-  return html;
+  return `<div class="pyramidWrap">${rowHtml.join("")}</div>`;
 }
 
 /* ---------- MEMORY ---------- */
