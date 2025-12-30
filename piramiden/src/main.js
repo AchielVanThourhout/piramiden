@@ -38,10 +38,8 @@ function closeSheet() {
 
 setInterval(() => {
   state.now = Date.now();
-  // re-render tijdens timers/fases
-  if (state.screen === "game" || state.screen === "memory") render();
-  if (state.screen === "lobby") render();
-}, 350);
+  updateLiveTimers(); // géén full render meer
+}, 250);
 
 /* ---------- Shell ---------- */
 function shell(title, rightHtml, mainHtml, bottomHtml = "") {
@@ -93,6 +91,26 @@ function render() {
   if (state.screen === "lobby") return renderLobby();
   if (state.screen === "memory") return renderMemory();
   return renderGame();
+}
+
+function updateLiveTimers() {
+  // update enkel wat tekstjes, nooit de hele DOM vervangen
+  const g = state.game;
+  if (!g) return;
+
+  // header timer chip
+  const chip = document.querySelector("#timerChip");
+  if (!chip) return;
+
+  if (g.phase === "review") {
+    const endsAt = g.review?.endsAt ?? 0;
+    const secs = Math.max(0, Math.ceil((endsAt - state.now) / 1000));
+    chip.textContent = `Start ${secs}s`;
+  } else if (g.phase === "claim") {
+    const endsAt = g.round?.passEndsAt ?? 0;
+    const secs = Math.max(0, Math.ceil((endsAt - state.now) / 1000));
+    chip.textContent = `Auto ${secs}s`;
+  }
 }
 
 /* ---------- HOME ---------- */
@@ -240,11 +258,11 @@ function renderGame() {
   if (phase === "review") {
     const endsAt = g.review?.endsAt ?? 0;
     const secs = Math.max(0, Math.ceil((endsAt - state.now) / 1000));
-    timerChip = `<span class="chip">Start ${secs}s</span>`;
+    timerChip = `<span class="chip" id="timerChip">Start 90s</span>`;
   } else if (phase === "claim") {
     const endsAt = g.round?.passEndsAt ?? 0;
     const secs = Math.max(0, Math.ceil((endsAt - state.now) / 1000));
-    timerChip = `<span class="chip">Auto ${secs}s</span>`;
+    timerChip = `<span class="chip" id="timerChip">Auto 30s</span>`;
   }
 
   // Current card display

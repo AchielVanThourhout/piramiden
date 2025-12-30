@@ -386,3 +386,6 @@ a{ color:inherit; }
   justify-content:space-between;
   gap:10px;
 }
+
+* { -webkit-tap-highlight-color: transparent; }
+button, .btn, select { touch-action: manipulation; }
