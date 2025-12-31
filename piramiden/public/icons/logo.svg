@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1220"/>
+      <stop offset="1" stop-color="#111b33"/>
+    </linearGradient>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7c5cff" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#7c5cff" stop-opacity="0.15"/>
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <!-- background -->
+  <rect width="512" height="512" rx="120" fill="url(#bg)"/>
+
+  <!-- subtle glow -->
+  <circle cx="170" cy="140" r="170" fill="#7c5cff" opacity="0.18"/>
+  <circle cx="370" cy="200" r="170" fill="#27d3a2" opacity="0.10"/>
+
+  <!-- pyramid tiles -->
+  <g filter="url(#soft)">
+    <!-- helper: a rounded tile -->
+    <!-- row 1 -->
+    <rect x="226" y="132" width="60" height="60" rx="18" fill="url(#tile)" stroke="rgba(255,255,255,0.14)"/>
+    <!-- row 2 -->
+    <rect x="188" y="202" width="60" height="60" rx="18" fill="url(#tile)" stroke="rgba(255,255,255,0.14)"/>
+    <rect x="264" y="202" width="60" height="60" rx="18" fill="url(#tile)" stroke="rgba(255,255,255,0.14)"/>
+    <!-- row 3 -->
+    <rect x="150" y="272" width="60" height="60" rx="18" fill="url(#tile)" stroke="rgba(255,255,255,0.14)"/>
+    <rect x="226" y="272" width="60" height="60" rx="18" fill="#27d3a2" opacity="0.85" stroke="rgba(255,255,255,0.22)"/>
+    <rect x="302" y="272" width="60" height="60" rx="18" fill="url(#tile)" stroke="rgba(255,255,255,0.14)"/>
+    <!-- row 4 -->
+    <rect x="112" y="342" width="60" height="60" rx="18" fill="url(#tile)" stroke="rgba(255,255,255,0.14)"/>
+    <rect x="188" y="342" width="60" height="60" rx="18" fill="url(#tile)" stroke="rgba(255,255,255,0.14)"/>
+    <rect x="264" y="342" width="60" height="60" rx="18" fill="url(#tile)" stroke="rgba(255,255,255,0.14)"/>
+    <rect x="340" y="342" width="60" height="60" rx="18" fill="url(#tile)" stroke="rgba(255,255,255,0.14)"/>
+  </g>
+
+  <!-- tiny card in the green tile -->
+  <g transform="translate(226 272)">
+    <rect x="18" y="14" width="24" height="34" rx="6" fill="rgba(11,18,32,0.65)" />
+    <rect x="22" y="20" width="16" height="3" rx="2" fill="rgba(233,238,252,0.55)"/>
+    <rect x="22" y="27" width="12" height="3" rx="2" fill="rgba(233,238,252,0.45)"/>
+    <rect x="22" y="34" width="14" height="3" rx="2" fill="rgba(233,238,252,0.40)"/>
+  </g>
+</svg>

@@ -707,8 +707,80 @@ function buildPyramidMini(g) {
   return html;
 }
 
+function emitWithTimeout(event, payload, timeoutMs = 2500) {
+  return new Promise((resolve) => {
+    // socket.io v4: timeout + ack callback
+    socket.timeout(timeoutMs).emit(event, payload, (err, res) => {
+      if (err) return resolve({ ok: false, error: "timeout" });
+      // res kan eender wat zijn; we normaliseren een beetje
+      if (res && typeof res === "object" && "ok" in res) return resolve(res);
+      return resolve({ ok: true, res });
+    });
+  });
+}
+
 
 /* ---------- MEMORY ---------- */
+async function handleMemorySubmit() {
+  const guesses = state.memoryGuesses.map(v => String(v ?? "").trim());
+
+  console.log("[memory] submit clicked", guesses);
+
+  if (!socket.connected) {
+    showMsg("Geen verbinding met server (socket disconnected).");
+    return;
+  }
+
+  if (guesses.some(v => v.length === 0)) {
+    showMsg("Vul alle 4 vakken in.");
+    return;
+  }
+
+  // UI feedback
+  const btn = document.querySelector("#submitMem");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Indienen…";
+  }
+  showMsg(""); // clear
+
+  // 1) Probeer memory:submit (jouw huidige event)
+  const r1 = await emitWithTimeout("memory:submit", { guesses }, 3000);
+
+  if (r1.ok === false) {
+    // timeout = we kregen geen bevestiging. Dit is een gigantische hint:
+    // OF server luistert niet op dit event, OF server geeft geen ack.
+    console.warn("[memory] memory:submit no ack / error:", r1);
+
+    // Probeer nog 1 fallback event-naam (alleen als je server anders heet)
+    // (Deze lijn mag je laten staan — als server het niet kent, gebeurt er ook niks.)
+    const r2 = await emitWithTimeout("game:memorySubmit", { guesses }, 1200);
+    console.warn("[memory] fallback game:memorySubmit result:", r2);
+
+    showMsg("Server bevestigt niet. Check server event-naam voor submit (zie console).");
+
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Indienen";
+    }
+    return;
+  }
+
+  // Als we hier zijn: we kregen ACK terug
+  console.log("[memory] submit ACK:", r1);
+
+  // Optimistisch UI updaten (tot de volgende game:state binnenkomt)
+  state.game = state.game ?? {};
+  state.game.memory = state.game.memory ?? {};
+  state.game.memory.yourSubmitted = true;
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Ingediend ✅";
+  }
+  showMsg("Ingediend ✅ Wachten op de rest…");
+}
+
 function renderMemory() {
   const g = state.game ?? {};
   const yourSubmitted = Boolean(g.memory?.yourSubmitted);
@@ -726,16 +798,20 @@ function renderMemory() {
           ${state.memoryGuesses
             .map(
               (val, i) => `
-            <input class="input" data-gi="${i}" value="${escapeAttr(val)}" placeholder="Slot ${i + 1}" ${
-                yourSubmitted ? "disabled" : ""
-              } />
-          `
+                <input class="input" data-gi="${i}" value="${escapeAttr(val)}" placeholder="Slot ${i + 1}" ${
+                  yourSubmitted ? "disabled" : ""
+                } />
+              `
             )
             .join("")}
         </div>
 
         <div class="spacer8"></div>
-        <button class="btn btnPrimary" id="submitMem" ${yourSubmitted ? "disabled" : ""}>Indienen</button>
+        <button class="btn btnPrimary" id="submitMem" ${yourSubmitted ? "disabled" : ""}>
+          ${yourSubmitted ? "Ingediend ✅" : "Indienen"}
+        </button>
+
+        <div id="msg" class="msg"></div>
       </section>
     `,
     `<button class="btn" id="detailsBottomBtn">Details</button>`
@@ -749,11 +825,12 @@ function renderMemory() {
   });
 
   const submit = document.querySelector("#submitMem");
-  if (submit) submit.onclick = () => socket.emit("memory:submit", { guesses: state.memoryGuesses });
+  if (submit) submit.onclick = () => handleMemorySubmit();
 
   const det = document.querySelector("#detailsBottomBtn");
   if (det) det.onclick = () => openSheet("Info", `<div class="smallMuted">Wachten op de rest…</div>`);
 }
+
 
 /* ---------- Socket events ---------- */
 function applyLobbyStatus(status) {
